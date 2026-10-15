@@ -122,7 +122,7 @@
     background: transparent; color: var(--text-3); border: 1px solid transparent;
     border-radius: 4px; cursor: pointer;
   }
-  .card:hover button.go { color: var(--accent); border-color: rgba(88, 193, 66, .5); }
+  .card:hover .actions button.go { color: var(--accent); border-color: rgba(88, 193, 66, .5); }
   button.go:hover { background: rgba(88, 193, 66, .1); }
   button.go:disabled { opacity: .5; cursor: default; }
   .menu { top: calc(100% + 4px); width: 170px; padding: 4px; }
@@ -135,17 +135,27 @@
   .menu .item:hover { background: var(--hover); color: var(--text); }
   .menu .item:hover svg { color: var(--accent); }
   .sent { font-size: 12px; color: var(--accent); }
-  .compose { grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; margin: 8px 0 0 15px; cursor: default; }
-  .compose input {
-    flex: 1; min-width: 0; height: 28px; padding: 0 10px;
+  .compose { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 6px; margin: 8px 0 0 15px; cursor: default; }
+  .compose textarea {
+    flex: 1; min-width: 0; height: 28px; max-height: 168px; padding: 5px 10px; resize: none; overflow-y: hidden;
     background: rgba(255, 255, 255, 0.04); color: var(--text); border: 1px solid var(--border);
-    border-radius: 4px; font: 13px var(--font); outline: none;
+    border-radius: 4px; font: 13px/16px var(--font); outline: none;
   }
-  .compose input::placeholder { color: var(--grey); }
-  .compose input:focus { border-color: rgba(88, 193, 66, .6); background: rgba(255, 255, 255, 0.06); }
-  .compose input:disabled { opacity: .5; }
-  .compose .send { color: var(--text-3); }
-  .compose .send:hover { color: var(--accent); background: rgba(88, 193, 66, .1); }
+  .compose textarea::placeholder { color: var(--grey); }
+  .compose textarea:focus { border-color: rgba(88, 193, 66, .6); background: rgba(255, 255, 255, 0.06); }
+  .compose textarea:disabled { opacity: .5; }
+  .compose.drop textarea { border-color: var(--accent); border-style: dashed; }
+  .thumbs { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 6px; }
+  .thumb { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; color: var(--grey); }
+  .thumb img { width: 44px; height: 44px; object-fit: cover; border-radius: 4px; border: 1px solid var(--border); }
+  .thumb button {
+    position: absolute; top: -5px; right: -5px; width: 16px; height: 16px; padding: 0; display: grid; place-items: center;
+    background: var(--panel-solid); color: var(--text-3); border: 1px solid var(--border-strong); border-radius: 50%;
+    font: 11px/1 var(--font); cursor: pointer;
+  }
+  .thumb button:hover { color: var(--error); }
+  .compose .send, .compose .attach { color: var(--text-3); }
+  .compose .send:hover, .compose .attach:hover { color: var(--accent); background: rgba(88, 193, 66, .1); }
   .compose .note { font-size: 12px; color: var(--accent); white-space: nowrap; }
   .compose .note.err { color: var(--error); }
   .empty, .error { color: var(--text-3); padding: 28px 0; text-align: center; }
@@ -247,8 +257,15 @@ function sessionHtml(s) {
       <div class="body">${lines.join('')}</div>
       ${s.agent && openCompose.has(s.blockId) ? `
       <form class="compose" data-compose="${esc(s.blockId)}">
-        <input name="text" autocomplete="off" placeholder="${s.state === 'working' ? 'Queue a message…' : 'Message Claude…'}">
+        ${thumbsHtml(s.blockId)}
+        <textarea name="text" rows="1" autocomplete="off" placeholder="${s.state === 'working' ? 'Queue a message…' : 'Message Claude…'}"
+          title="Enter to send, Shift+Enter for a new line. Paste or drop images"></textarea>
         <span class="note"></span>
+        <button class="go attach" type="button" data-attach="${esc(s.blockId)}" title="Attach images" aria-label="Attach images">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="m21.4 11.1-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/>
+          </svg>
+        </button>
         <button class="go send" type="submit" title="Send (Enter)" aria-label="Send">
           <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M14 2 7 9"/><path d="M14 2 9.5 14 7 9 2 6.5z"/>
@@ -284,6 +301,7 @@ function render() {
   for (const form of document.querySelectorAll('[data-compose]')) {
     const id = form.dataset.compose;
     form.text.value = drafts.get(id) || '';
+    autosize(form.text);
     if (sending.has(id)) form.text.disabled = true;
     const n = notes.get(id);
     if (n && n.until > Date.now()) {
@@ -306,7 +324,69 @@ async function refresh() {
 }
 
 const drafts = new Map();
+// Pasted images per session: { next, items: { n: dataUrl } }. The draft holds an [Image #n] mark for each,
+// like Claude Code's own prompt; deleting the mark drops the image.
+const images = new Map();
 const sending = new Set();
+const MARK = /\[Image #(\d+)\]/g;
+
+function usedImages(id) {
+  const items = images.get(id)?.items || {};
+  const used = {};
+  for (const m of (drafts.get(id) || '').matchAll(MARK)) if (items[m[1]]) used[m[1]] = items[m[1]];
+  return used;
+}
+function thumbsHtml(id) {
+  const used = Object.entries(usedImages(id));
+  if (!used.length) return '';
+  return `<div class="thumbs">${used.map(([n, src]) => `
+    <div class="thumb"><img src="${src}" alt=""><span>#${n}</span>
+      <button type="button" data-unattach="${n}" title="Remove image" aria-label="Remove image ${n}">×</button></div>`).join('')}</div>`;
+}
+function autosize(ta) {
+  ta.style.height = 'auto';
+  ta.style.height = `${Math.min(ta.scrollHeight + 2, 168)}px`;
+  ta.style.overflowY = ta.scrollHeight + 2 > 168 ? 'auto' : 'hidden';
+}
+const readAsDataUrl = (file) => new Promise((resolve, reject) => {
+  const r = new FileReader();
+  r.onload = () => resolve(r.result);
+  r.onerror = () => reject(r.error);
+  r.readAsDataURL(file);
+});
+async function addImages(id, files) {
+  files = [...files].filter((f) => /^image\/(png|jpeg|gif|webp)$/.test(f.type));
+  if (!files.length) return;
+  const form = document.querySelector(`[data-compose="${CSS.escape(id)}"]`);
+  const ta = form?.text;
+  let text = drafts.get(id) || '';
+  let caret = ta && document.activeElement === ta ? ta.selectionStart : text.length;
+  const state = images.get(id) || { next: 1, items: {} };
+  images.set(id, state);
+  openCompose.add(id); // an empty field may have closed while the file dialog was open
+  for (const f of files) {
+    const n = state.next++;
+    state.items[n] = await readAsDataUrl(f);
+    const before = text.slice(0, caret), mark = `${before && !/\s$/.test(before) ? ' ' : ''}[Image #${n}] `;
+    text = before + mark + text.slice(caret);
+    caret += mark.length;
+  }
+  drafts.set(id, text);
+  render();
+  const next = document.querySelector(`[data-compose="${CSS.escape(id)}"]`)?.text;
+  if (next) { next.focus(); next.setSelectionRange(caret, caret); }
+}
+function removeImage(id, n) {
+  drafts.set(id, (drafts.get(id) || '').replace(new RegExp(`\\s?\\[Image #${n}\\]\\s?`, 'g'), ' ').replace(/^ /, ''));
+  delete images.get(id)?.items[n];
+  render();
+}
+
+// One file picker for all cards: polling re-renders the cards while the dialog is open
+const picker = Object.assign(document.createElement('input'), { type: 'file', accept: 'image/png,image/jpeg,image/gif,image/webp', multiple: true, hidden: true });
+document.body.append(picker);
+let pickerFor = null;
+picker.onchange = () => { if (pickerFor) addImages(pickerFor, picker.files); picker.value = ''; };
 const notes = new Map();
 const api = (p, body) => fetch(p, { method: 'POST', headers: { 'X-Agent-Board': '1' }, body: JSON.stringify(body) });
 
@@ -360,7 +440,14 @@ function closeMenu() {
 }
 
 $('list').addEventListener('click', (e) => {
-  if (e.target.closest('.compose')) return;
+  const compose = e.target.closest('.compose');
+  if (compose) {
+    const attach = e.target.closest('[data-attach]');
+    if (attach) { pickerFor = attach.dataset.attach; picker.click(); }
+    const unattach = e.target.closest('[data-unattach]');
+    if (unattach) removeImage(compose.dataset.compose, unattach.dataset.unattach);
+    return;
+  }
   const menuBtn = e.target.closest('[data-menu]');
   if (menuBtn) {
     openMenu = openMenu === menuBtn.dataset.menu ? null : menuBtn.dataset.menu;
@@ -406,7 +493,47 @@ $('list').addEventListener('focusout', (e) => {
 
 $('list').addEventListener('input', (e) => {
   const form = e.target.closest('[data-compose]');
-  if (form) drafts.set(form.dataset.compose, e.target.value);
+  if (!form) return;
+  const id = form.dataset.compose;
+  const hadImages = Object.keys(usedImages(id)).length;
+  drafts.set(id, e.target.value);
+  autosize(e.target);
+  if (Object.keys(usedImages(id)).length !== hadImages) render(); // a mark was deleted: update the thumbnails
+});
+
+// Enter sends, Shift+Enter starts a new line
+$('list').addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' || e.shiftKey || e.isComposing || e.target.name !== 'text') return;
+  e.preventDefault();
+  e.target.form.requestSubmit();
+});
+
+$('list').addEventListener('paste', (e) => {
+  const form = e.target.closest?.('[data-compose]');
+  const files = [...(e.clipboardData?.files || [])];
+  if (!form || !files.some((f) => f.type.startsWith('image/'))) return;
+  e.preventDefault();
+  addImages(form.dataset.compose, files);
+});
+
+$('list').addEventListener('dragover', (e) => {
+  const form = e.target.closest?.('[data-compose]');
+  if (!form || !e.dataTransfer.types.includes('Files')) return;
+  e.preventDefault();
+  form.classList.add('drop');
+});
+$('list').addEventListener('dragleave', (e) => {
+  const form = e.target.closest?.('[data-compose]');
+  if (form && !form.contains(e.relatedTarget)) form.classList.remove('drop');
+});
+// A file dropped anywhere else would make the page navigate to it
+for (const type of ['dragover', 'drop']) document.addEventListener(type, (e) => e.preventDefault());
+$('list').addEventListener('drop', (e) => {
+  const form = e.target.closest?.('[data-compose]');
+  if (!form) return;
+  e.preventDefault();
+  form.classList.remove('drop');
+  addImages(form.dataset.compose, e.dataTransfer.files);
 });
 
 $('list').addEventListener('submit', async (e) => {
@@ -419,9 +546,10 @@ $('list').addEventListener('submit', async (e) => {
   form.text.disabled = true;
   let note = 'Sent', failed = false;
   try {
-    const r = await api('/api/send', { blockId: id, text });
+    const r = await api('/api/send', { blockId: id, text, images: usedImages(id) });
     if (!r.ok) throw new Error((await r.json()).error || r.statusText);
     drafts.delete(id);
+    images.delete(id);
   } catch (err) {
     note = `Failed: ${err.message}`;
     failed = true;

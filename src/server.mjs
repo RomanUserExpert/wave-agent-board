@@ -233,6 +233,8 @@ function getPsWorker() {
   });
   psWorker.on('exit', () => { psWaiters.splice(0).forEach((r) => r()); psWorker = null; });
   psWorker.stdin.write('$ws = New-Object -ComObject WScript.Shell\n');
+  // Real key events: WScript.SendKeys sometimes leaves Alt held down after a tab switch
+  psWorker.stdin.write(`Add-Type -Namespace AgentBoard -Name Keys -MemberDefinition '[DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);'\n`);
   return psWorker;
 }
 
@@ -245,11 +247,14 @@ function psRun(script) {
   });
 }
 
+const VK_ALT = 0x12;
+const KEYUP = 2;
 function sendKeysToWave(keys) {
-  // Wave on Windows: Alt+1..9 jumps to tab N, Alt+] / Alt+[ to the next/previous tab
-  return psRun(`$null = $ws.AppActivate('Wave'); Start-Sleep -Milliseconds 60; ${keys
-    .map((k) => `$ws.SendKeys('${k}'); Start-Sleep -Milliseconds 40`)
-    .join('; ')}`);
+  // Wave on Windows: Alt+1..9 jumps to tab N, Alt+] / Alt+[ to the next/previous tab.
+  // keys are virtual-key codes pressed with Alt held; Alt is released in finally, whatever happens.
+  const k = (vk, flags = 0) => `[AgentBoard.Keys]::keybd_event(${vk}, 0, ${flags}, [UIntPtr]::Zero)`;
+  const presses = keys.map((vk) => `${k(vk)}; ${k(vk, KEYUP)}; Start-Sleep -Milliseconds 40`).join('; ');
+  return psRun(`$null = $ws.AppActivate('Wave'); Start-Sleep -Milliseconds 60; try { ${k(VK_ALT)}; ${presses} } finally { ${k(VK_ALT, KEYUP)} }`);
 }
 
 function setClipboard(text) {
@@ -279,10 +284,10 @@ async function focusSession(blockId) {
     const target = ws.tabids.indexOf(tabId);
     const current = ws.tabids.indexOf(ws.activetabid);
     let keys;
-    if (target < 8) keys = [`%${target + 1}`];
+    if (target < 8) keys = [0x31 + target]; // '1'..'8'
     else {
       const delta = target - current;
-      keys = Array(Math.abs(delta)).fill(delta > 0 ? '%{]}' : '%{[}');
+      keys = Array(Math.abs(delta)).fill(delta > 0 ? 0xdd : 0xdb); // ']' / '['
     }
     const switched = async () => {
       for (let i = 0; i < 12; i++) {
@@ -314,16 +319,60 @@ function playChime(reason) {
 // ---------- Send input ----------
 const WAVE_INPUT = path.resolve(HERE, '..', 'bin', 'wave-input.exe');
 
-function sendInput(blockId, text) {
+function waveInput(blockId, text, flags = []) {
   if (!fs.existsSync(WAVE_INPUT)) {
     return Promise.reject(new Error('bin/wave-input.exe not found: download it from Releases or run "npm run build"'));
   }
   return new Promise((resolve, reject) => {
-    const child = execFile(WAVE_INPUT, ['-b', blockId, '-enter'], { windowsHide: true, timeout: 10000 }, (err, _out, stderr) =>
+    const child = execFile(WAVE_INPUT, ['-b', blockId, ...flags], { windowsHide: true, timeout: 10000 }, (err, _out, stderr) =>
       err ? reject(new Error(stderr.trim() || err.message)) : resolve(),
     );
     child.stdin.end(text);
   });
+}
+
+// Pasted images are saved here; Claude Code turns a pasted image path into an attachment ([Image #N])
+const IMAGES_DIR = path.join(HOME_DIR, 'images');
+const IMAGE_TYPES = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp' };
+const IMAGE_MARK = /\[Image #(\d+)\]/g;
+
+function saveImage(dataUrl) {
+  const m = /^data:(image\/[\w+.-]+);base64,(.+)$/s.exec(String(dataUrl || ''));
+  if (!m || !IMAGE_TYPES[m[1]]) throw new Error('unsupported image type');
+  fs.mkdirSync(IMAGES_DIR, { recursive: true });
+  const file = path.join(IMAGES_DIR, `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${IMAGE_TYPES[m[1]]}`);
+  fs.writeFileSync(file, Buffer.from(m[2], 'base64'));
+  return file;
+}
+
+// Images are kept a week: the transcript refers to them by path
+function pruneImages() {
+  try {
+    for (const f of fs.readdirSync(IMAGES_DIR)) {
+      const p = path.join(IMAGES_DIR, f);
+      if (Date.now() - fs.statSync(p).mtimeMs > 7 * 86400_000) fs.rmSync(p, { force: true });
+    }
+  } catch {}
+}
+
+// The text may hold [Image #N] marks: send the text around them as typed, each image as a pasted path,
+// in order, then Enter
+async function sendInput(blockId, text, images = {}) {
+  const parts = [];
+  let last = 0;
+  for (const m of text.matchAll(IMAGE_MARK)) {
+    const image = images[m[1]];
+    if (!image) continue; // a mark the user typed by hand
+    parts.push({ text: text.slice(last, m.index) }, { text: saveImage(image), paste: true });
+    last = m.index + m[0].length;
+  }
+  parts.push({ text: text.slice(last) });
+  const nonEmpty = parts.filter((p) => p.text.trim());
+  for (const [i, p] of nonEmpty.entries()) {
+    const isLast = i === nonEmpty.length - 1;
+    await waveInput(blockId, p.text.replace(/^[\r\n]+|[\r\n]+$/g, ''), [...(p.paste ? ['-paste'] : []), ...(isLast ? ['-enter'] : [])]);
+    if (!isLast) await new Promise((r) => setTimeout(r, 150));
+  }
 }
 
 // ---------- HTTP ----------
@@ -332,9 +381,13 @@ function send(res, code, body, type = 'application/json; charset=utf-8') {
   res.end(typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body));
 }
 
+const MAX_BODY = 40 * 1024 * 1024; // room for a few pasted screenshots
 async function readBody(req) {
   let data = '';
-  for await (const c of req) data += c;
+  for await (const c of req) {
+    data += c;
+    if (data.length > MAX_BODY) throw new Error('request too large');
+  }
   return data ? JSON.parse(data) : {};
 }
 
@@ -390,9 +443,9 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { ok: true });
     }
     if (req.method === 'POST' && url.pathname === '/api/send') {
-      const { blockId, text } = await readBody(req);
+      const { blockId, text, images } = await readBody(req);
       if (!blockId || !String(text || '').trim()) return send(res, 400, { error: 'blockId and text are required' });
-      await sendInput(blockId, String(text));
+      await sendInput(blockId, String(text), images && typeof images === 'object' ? images : {});
       markSeen(blockId);
       cache.at = 0;
       return send(res, 200, { ok: true });
@@ -405,6 +458,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 ensureDirs();
+pruneImages();
 const existing = Number(readJson(PID_FILE)?.pid);
 if (existing && existing !== process.pid && isPidAlive(existing)) {
   log(`already running (pid ${existing})`);

@@ -1,6 +1,6 @@
 // wave-input writes text into a Wave terminal block's PTY, as if it was typed.
 //
-//	echo "hello" | wave-input -b <blockid> [-enter]
+//	echo "hello" | wave-input -b <blockid> [-paste] [-enter]
 //
 // It speaks Wave's RPC protocol directly (newline-delimited JSON over wave.sock),
 // authenticating with WAVETERM_JWT, so it has no dependency on the Wave codebase.
@@ -84,6 +84,7 @@ func socketFromJwt(jwt string) (string, error) {
 func run() error {
 	blockId := flag.String("b", "", "target block id")
 	enter := flag.Bool("enter", false, "press Enter after the text")
+	paste := flag.Bool("paste", false, "always send the text as a bracketed paste (e.g. an image path, so Claude Code attaches it)")
 	flag.Parse()
 	if *blockId == "" {
 		return errors.New("-b <blockid> is required")
@@ -102,7 +103,7 @@ func run() error {
 	}
 	text = []byte(strings.TrimRight(string(text), "\r\n"))
 	// Multi-line text goes in as a bracketed paste so newlines don't submit early
-	if strings.Contains(string(text), "\n") {
+	if len(text) > 0 && (*paste || strings.Contains(string(text), "\n")) {
 		text = append(append([]byte("\x1b[200~"), text...), []byte("\x1b[201~")...)
 	}
 

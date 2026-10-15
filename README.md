@@ -14,6 +14,8 @@ without leaving the board.
   "Edit: colors.dark.json"), the live spinner line, and the last reply once it's done.
 - **Go to terminal.** Switches to the right tab and focuses the terminal.
 - **Message.** Type into a session from the board. The text goes straight into the terminal, with no tab switching.
+  Shift+Enter starts a new line. Paste, drop or attach images: they arrive as `[Image #N]`, just like pasting
+  into Claude Code itself.
 - **Copy session ID.** Copies a short reference: the session ID, its transcript path and the command to message it.
   Paste it into another Claude session and that one can read the first session's full context or talk to it.
 - **Sound when done.** A soft chime when an agent finishes, with adjustable volume. Handy if you run agents in
@@ -66,10 +68,12 @@ Wave DB (tabs, order) ──► server.mjs (127.0.0.1:7788) ◄── wsh termsc
   `wsh termscrollback`. Hooks supply the meaning (task, tool); the screen tells whether the agent is actually
   running right now, which also covers sessions started before the hooks were installed.
 - **Go to terminal.** Wave 0.14.5 has no `wsh` command to switch tabs, so the server presses Wave's own tab
-  shortcuts (Alt+1…8, or Alt+] / Alt+[ beyond that) through a persistent PowerShell, then runs `wsh focusblock`.
+  shortcuts (Alt+1…8, or Alt+] / Alt+[ beyond that) with `keybd_event` from a persistent PowerShell, always
+  releasing Alt afterwards, then runs `wsh focusblock`.
 - **Message.** `wave-input/` is a small Go program (standard library only) that speaks Wave's RPC protocol over
   its socket, authenticates with `WAVETERM_JWT`, and calls `controllerinput`, which writes into the terminal's PTY.
-  Multi-line text goes in as a bracketed paste.
+  Multi-line text goes in as a bracketed paste. Images are saved to `~/.wave-agent-board/images/` (kept a week) and
+  their paths are pasted in place of each `[Image #N]`; Claude Code turns a pasted image path into an attachment.
 - **Background processes.** Claude Code runs hooks in a Windows job object that kills every child process when the
   hook exits, so the server and the fallback chime are launched through WMI.
 
@@ -90,6 +94,7 @@ server started from a hook can call `wsh`. That's the same token every Wave term
 | `~/.wave-agent-board/status/` | One status file per terminal |
 | `~/.wave-agent-board/config.json` | Sound on/off and volume |
 | `~/.wave-agent-board/seen.json` | When you last looked at each finished session |
+| `~/.wave-agent-board/images/` | Images sent from the board, deleted after a week |
 | `~/.wave-agent-board/server.log` | Server log |
 
 ## License
