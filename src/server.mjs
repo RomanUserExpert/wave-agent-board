@@ -224,6 +224,8 @@ function getPsWorker() {
   let buf = '';
   psWorker.stdout.on('data', (d) => {
     buf += d;
+    const err = /chime-error: [^\r\n]*/.exec(buf);
+    if (err) { log(err[0]); buf = buf.replace(err[0], ''); }
     while (buf.includes('__done__')) {
       buf = buf.slice(buf.indexOf('__done__') + 8);
       psWaiters.shift()?.();
@@ -303,8 +305,10 @@ async function focusSession(blockId) {
   return { tabId, switched: tabId !== ws.activetabid };
 }
 
-function playChime() {
-  getPsWorker().stdin.write(`${psPlayCommand(ensureSoundFile())}\n`);
+function playChime(reason) {
+  const file = ensureSoundFile();
+  log(`chime (${reason}) volume=${getConfig().volume}`);
+  getPsWorker().stdin.write(`try { ${psPlayCommand(file)} } catch { Write-Output "chime-error: $_" }\n`);
 }
 
 // ---------- Send input ----------
@@ -378,11 +382,11 @@ const server = http.createServer(async (req, res) => {
       if (typeof body.sound === 'boolean') config.sound = body.sound;
       if (Number.isFinite(body.volume)) config.volume = Math.round(Math.max(0, Math.min(100, body.volume)));
       writeJsonAtomic(CONFIG_FILE, config);
-      if (config.sound) playChime(); // preview
+      if (config.sound) playChime('preview');
       return send(res, 200, config);
     }
     if (req.method === 'POST' && url.pathname === '/api/chime') {
-      if (getConfig().sound) playChime();
+      if (getConfig().sound) playChime('agent finished');
       return send(res, 200, { ok: true });
     }
     if (req.method === 'POST' && url.pathname === '/api/send') {
