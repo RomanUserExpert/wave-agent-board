@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Board</title>
+<style>
+  /* Tokens mirror Wave Terminal's theme.scss */
+  :root {
+    --bg: rgb(0, 0, 0);
+    --panel: rgba(31, 33, 31, 0.5);
+    --panel-solid: #0f100f;
+    --hover: rgba(255, 255, 255, 0.06);
+    --border: rgba(255, 255, 255, 0.1);
+    --border-strong: rgba(255, 255, 255, 0.16);
+    --text: #f7f7f7;
+    --text-2: rgb(195, 200, 194);
+    --text-3: #8a8f89;
+    --grey: #666;
+    --accent: rgb(88, 193, 66);
+    --warning: rgb(224, 185, 86);
+    --done: rgb(77, 156, 245);
+    --error: rgb(229, 77, 46);
+    --idle: #5c625b;
+    --radius: 8px;
+    --font: "Inter", system-ui, "Segoe UI", sans-serif;
+    --mono: "Hack", "Cascadia Mono", Consolas, monospace;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { background: var(--bg); }
+  body { margin: 0; color: var(--text); font: 13px/1.45 var(--font); -webkit-font-smoothing: antialiased; }
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.5); }
+
+  header {
+    position: sticky; top: 0; z-index: 2; background: var(--bg);
+    padding: 10px 44px 10px 14px; border-bottom: 1px solid var(--border);
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px;
+  }
+  h1 { margin: 0; font: 700 11px/1 var(--font); text-transform: uppercase; letter-spacing: .06em; color: var(--text-2); }
+  h1 span { color: var(--grey); }
+  .counters { display: flex; gap: 14px; font-size: 12px; color: var(--text-3); }
+  .counters b { font-weight: 600; font-variant-numeric: tabular-nums; margin-right: 3px; }
+  .counters .waiting b { color: var(--warning); }
+  .counters .working b { color: var(--accent); }
+  .counters .idle b { color: var(--text-2); }
+  .counters .unread b { color: var(--done); }
+  .spacer { flex: 1; }
+
+  .toggle { display: flex; align-items: center; gap: 7px; color: var(--text-3); font-size: 12px; cursor: pointer; user-select: none; }
+  .toggle input { display: none; }
+  .switch { width: 26px; height: 14px; border-radius: 7px; background: var(--border-strong); position: relative; transition: background .15s; }
+  .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 10px; height: 10px; border-radius: 50%; background: var(--text); transition: transform .15s; }
+  .toggle input:checked + .switch { background: var(--accent); }
+  .toggle input:checked + .switch::after { transform: translateX(12px); }
+
+  .settings { position: absolute; top: 6px; right: 10px; }
+  .icon-btn {
+    display: grid; place-items: center; width: 26px; height: 26px; padding: 0;
+    background: transparent; color: var(--text-3); border: 0; border-radius: 4px; cursor: pointer;
+  }
+  .icon-btn:hover, .icon-btn[aria-expanded="true"] { color: var(--text); background: var(--hover); }
+  .popover {
+    position: absolute; right: 0; top: calc(100% + 6px); z-index: 10; width: 230px;
+    background: #232323; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 6px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.8); padding: 6px;
+  }
+  .popover .row { display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 4px; color: var(--text-2); font-size: 12px; }
+  .popover .row.toggle { justify-content: space-between; }
+  .popover .row.toggle:hover { background: var(--hover); }
+  .popover .label { flex: none; }
+  .popover input[type=range] { flex: 1; width: auto; }
+  .popover .val { width: 22px; text-align: right; color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .popover .sep { height: 1px; background: var(--border); margin: 4px 2px; }
+  input[type=range] { -webkit-appearance: none; appearance: none; width: 72px; height: 14px; background: transparent; cursor: pointer; }
+  input[type=range]::-webkit-slider-runnable-track { height: 3px; border-radius: 2px; background: linear-gradient(to right, var(--accent) var(--fill, 27%), var(--border-strong) var(--fill, 27%)); }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 10px; height: 10px; margin-top: -3.5px; border-radius: 50%; background: var(--text); }
+  input[type=range]:disabled { opacity: .35; cursor: default; }
+  input[type=range]:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+  main { padding: 4px 14px 20px; }
+  .tab { margin-top: 14px; }
+  .tab-title { display: flex; align-items: center; gap: 8px; margin: 0 0 6px 2px; font: 700 11px/1 var(--font); text-transform: uppercase; letter-spacing: .05em; color: var(--text-3); }
+  .tab-title .num { color: var(--grey); font-variant-numeric: tabular-nums; }
+  .tab-title.active { color: var(--text-2); }
+  .chip { text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--accent); border: 1px solid rgba(88, 193, 66, .4); border-radius: 4px; padding: 2px 6px; font-size: 10px; }
+
+  .card {
+    position: relative; display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; align-items: start;
+    background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 9px 12px 10px 14px; margin-bottom: 6px; cursor: pointer;
+    transition: background .1s, border-color .1s;
+  }
+  .card:hover { background: var(--hover); border-color: var(--border-strong); }
+  .card.waiting { border-color: rgba(224, 185, 86, .35); }
+  .card.shell { padding-top: 7px; padding-bottom: 7px; background: transparent; }
+
+  .head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
+  .project { font-weight: 600; color: var(--text); }
+  .agent { color: var(--grey); font-size: 12px; }
+  .dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--idle); align-self: center; }
+  .working .dot { background: var(--accent); animation: blink 1.4s ease-in-out infinite; }
+  .waiting .dot { background: var(--warning); }
+  .unread .dot { background: var(--done); box-shadow: 0 0 0 3px rgba(77, 156, 245, .18); }
+  .shell .dot { background: transparent; border: 1px solid var(--grey); }
+  @keyframes blink { 50% { opacity: .25; } }
+  @media (prefers-reduced-motion: reduce) { .working .dot { animation: none; } }
+  .timing { color: var(--grey); font-size: 12px; font-variant-numeric: tabular-nums; }
+
+  .body { grid-column: 1 / -1; min-width: 0; padding-left: 15px; }
+  .line { margin-top: 4px; color: var(--text-2); overflow-wrap: anywhere; }
+  .line .k { color: var(--grey); margin-right: 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
+  .summary { color: var(--text-3); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .mono { margin-top: 4px; font: 12px/1.4 var(--mono); color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .working .mono.spin { color: rgba(88, 193, 66, .75); }
+  .hint { margin-top: 4px; color: var(--grey); font-size: 12px; }
+
+  .actions { grid-row: 1; grid-column: 2; align-self: start; margin: -4px -5px -4px 0; position: relative; }
+  button.go {
+    display: grid; place-items: center; width: 26px; height: 26px; padding: 0;
+    background: transparent; color: var(--text-3); border: 1px solid transparent;
+    border-radius: 4px; cursor: pointer;
+  }
+  .card:hover button.go { color: var(--accent); border-color: rgba(88, 193, 66, .5); }
+  button.go:hover { background: rgba(88, 193, 66, .1); }
+  button.go:disabled { opacity: .5; cursor: default; }
+  .menu { top: calc(100% + 4px); width: 170px; padding: 4px; }
+  .menu .item {
+    display: flex; align-items: center; gap: 9px; width: 100%; padding: 7px 8px;
+    background: transparent; color: var(--text-2); border: 0; border-radius: 4px;
+    font: 12px var(--font); text-align: left; cursor: pointer;
+  }
+  .menu .item svg { color: var(--text-3); flex: none; }
+  .menu .item:hover { background: var(--hover); color: var(--text); }
+  .menu .item:hover svg { color: var(--accent); }
+  .sent { font-size: 12px; color: var(--accent); }
+  .compose { grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; margin: 8px 0 0 15px; cursor: default; }
+  .compose input {
+    flex: 1; min-width: 0; height: 28px; padding: 0 10px;
+    background: rgba(255, 255, 255, 0.04); color: var(--text); border: 1px solid var(--border);
+    border-radius: 4px; font: 13px var(--font); outline: none;
+  }
+  .compose input::placeholder { color: var(--grey); }
+  .compose input:focus { border-color: rgba(88, 193, 66, .6); background: rgba(255, 255, 255, 0.06); }
+  .compose input:disabled { opacity: .5; }
+  .compose .send { color: var(--text-3); }
+  .compose .send:hover { color: var(--accent); background: rgba(88, 193, 66, .1); }
+  .compose .note { font-size: 12px; color: var(--accent); white-space: nowrap; }
+  .compose .note.err { color: var(--error); }
+  .empty, .error { color: var(--text-3); padding: 28px 0; text-align: center; }
+  .error { color: var(--error); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Agents <span id="ws"></span></h1>
+  <div class="counters" id="counters"></div>
+  <div class="spacer"></div>
+  <div class="settings">
+    <button class="icon-btn" id="settingsBtn" title="Settings" aria-label="Settings" aria-haspopup="true" aria-expanded="false">
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+        <circle cx="12" cy="12" r="3"/>
+      </svg>
+    </button>
+    <div class="popover" id="settingsPanel" hidden>
+      <label class="row toggle" title="Play a chime when an agent finishes"><span>Sound when done</span><input type="checkbox" id="sound"><span class="switch"></span></label>
+      <div class="row"><span class="label">Volume</span><input type="range" id="volume" min="1" max="100" step="1" aria-label="Chime volume"><span class="val" id="volumeVal"></span></div>
+      <div class="sep"></div>
+      <label class="row toggle"><span>Show plain terminals</span><input type="checkbox" id="showShells"><span class="switch"></span></label>
+    </div>
+  </div>
+</header>
+<main id="list"><div class="empty">Loading…</div></main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const STATE_LABEL = { working: 'working', waiting: 'needs you', idle: 'idle', shell: 'terminal' };
+let data = null;
+
+const showShells = $('showShells');
+try { showShells.checked = localStorage.getItem('showShells') === '1'; } catch {}
+showShells.onchange = () => { try { localStorage.setItem('showShells', showShells.checked ? '1' : '0'); } catch {} render(); };
+
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+function ago(ts) {
+  if (!ts) return '';
+  const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  return `${Math.floor(m / 60)}h ${m % 60}m`;
+}
+
+function sessionHtml(s) {
+  const lines = [];
+  if (s.state === 'shell') {
+    if (s.lastLine) lines.push(`<div class="mono">${esc(s.lastLine)}</div>`);
+  } else {
+    if (s.task) lines.push(`<div class="line"><span class="k">Task</span>${esc(s.task)}</div>`);
+    if ((s.state === 'working' || s.state === 'waiting') && s.activity)
+      lines.push(`<div class="line"><span class="k">Now</span>${esc(s.activity)}</div>`);
+    if (s.state === 'working' && s.spinner) lines.push(`<div class="mono spin">${esc(s.spinner)}</div>`);
+    const summary = s.state === 'idle' ? (s.lastMessage || s.recap) : s.recap;
+    if (summary) lines.push(`<div class="line summary">${esc(summary)}</div>`);
+    if (!s.hooked && !s.task && !summary) lines.push(`<div class="hint">Started before hooks were installed — state only</div>`);
+  }
+  let timing = '';
+  if (s.state === 'working' && s.since) timing = ago(s.since);
+  else if (s.updatedAt && s.state !== 'shell') timing = `${ago(s.updatedAt)} ago`;
+  return `
+    <div class="card ${s.state}${isUnread(s) ? ' unread' : ''}" data-block="${esc(s.blockId)}" title="${esc(s.cwd)}">
+      <div class="head">
+        <span class="dot" title="${isUnread(s) ? 'done — not seen yet' : STATE_LABEL[s.state] || s.state}" aria-label="${isUnread(s) ? 'done, not seen yet' : STATE_LABEL[s.state] || s.state}"></span>
+        <span class="project">${esc(s.project || 'terminal')}</span>
+        ${s.agent ? `<span class="agent">${esc(s.agent)}</span>` : ''}
+        ${timing ? `<span class="timing">${timing}</span>` : ''}
+        ${flash.get(s.blockId)?.until > Date.now() ? `<span class="sent">${esc(flash.get(s.blockId).text)}</span>` : ''}
+      </div>
+      <div class="actions">
+        <button class="go" data-menu="${esc(s.blockId)}" title="Actions" aria-label="Actions" aria-haspopup="true" aria-expanded="${openMenu === s.blockId}">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>
+          </svg>
+        </button>
+        <div class="popover menu" ${openMenu === s.blockId ? '' : 'hidden'}>
+          <button class="item" data-action="goto" data-id="${esc(s.blockId)}">
+            <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M9.5 2.5h4v4"/><path d="M13.5 2.5 7.5 8.5"/><path d="M12 9.5v3a1 1 0 0 1-1 1H3.5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h3"/>
+            </svg>Go to terminal
+          </button>
+          ${s.agent ? `<button class="item" data-action="message" data-id="${esc(s.blockId)}">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+            </svg>Message
+          </button>
+          <button class="item" data-action="copy" data-id="${esc(s.blockId)}" title="Copies the session ID, transcript path and how to message it, to hand to another session">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/>
+            </svg>Copy session ID
+          </button>` : ''}
+        </div>
+      </div>
+      <div class="body">${lines.join('')}</div>
+      ${s.agent && openCompose.has(s.blockId) ? `
+      <form class="compose" data-compose="${esc(s.blockId)}">
+        <input name="text" autocomplete="off" placeholder="${s.state === 'working' ? 'Queue a message…' : 'Message Claude…'}">
+        <span class="note"></span>
+        <button class="go send" type="submit" title="Send (Enter)" aria-label="Send">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M14 2 7 9"/><path d="M14 2 9.5 14 7 9 2 6.5z"/>
+          </svg>
+        </button>
+      </form>` : ''}
+    </div>`;
+}
+
+function render() {
+  if (!data) return;
+  $('ws').textContent = `· ${data.workspace.name}`;
+  const all = data.tabs.flatMap((t) => t.sessions);
+  const count = (st) => all.filter((s) => s.state === st).length;
+  const unread = all.filter(isUnread).length;
+  $('counters').innerHTML = [['waiting', 'need you'], ['working', 'working'], ['idle', 'idle']]
+    .map(([k, l]) => `<span class="${k}"><b>${count(k)}</b>${l}</span>`).join('')
+    + (unread ? `<span class="unread"><b>${unread}</b>done</span>` : '');
+
+  const html = data.tabs.map((t) => {
+    const sessions = t.sessions.filter((s) => showShells.checked || s.state !== 'shell');
+    if (!sessions.length) return '';
+    return `<section class="tab">
+      <div class="tab-title${t.active ? ' active' : ''}"><span class="num">${t.index + 1}</span>${esc(t.name)}${t.active ? '<span class="chip">current</span>' : ''}</div>
+      ${sessions.map(sessionHtml).join('')}
+    </section>`;
+  }).join('');
+
+  // Polling re-renders the list; keep drafts, focus and caret in the message fields
+  const active = document.activeElement?.closest?.('[data-compose]')?.dataset.compose;
+  const caret = active ? document.activeElement.selectionStart : 0;
+  $('list').innerHTML = html ||`<div class="empty">No active agents${showShells.checked ? '' : ' — turn on “Plain terminals” to see everything'}</div>`;
+  for (const form of document.querySelectorAll('[data-compose]')) {
+    const id = form.dataset.compose;
+    form.text.value = drafts.get(id) || '';
+    if (sending.has(id)) form.text.disabled = true;
+    const n = notes.get(id);
+    if (n && n.until > Date.now()) {
+      const el = form.querySelector('.note');
+      el.textContent = el.title = n.text;
+      el.classList.toggle('err', n.err);
+    }
+    if (id === active) { form.text.focus(); form.text.setSelectionRange(caret, caret); }
+  }
+}
+
+async function refresh() {
+  try {
+    const r = await fetch('/api/sessions');
+    if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+    data = await r.json();    render();
+  } catch (e) {
+    $('list').innerHTML = `<div class="error">Couldn't load sessions: ${esc(e.message)}</div>`;
+  }
+}
+
+const drafts = new Map();
+const sending = new Set();
+const notes = new Map();
+const api = (p, body) => fetch(p, { method: 'POST', headers: { 'X-Agent-Board': '1' }, body: JSON.stringify(body) });
+
+let openMenu = null;
+// Hovering a finished card marks it seen; hide the dot right away instead of waiting for the next poll
+const seenLocally = new Set();
+function isUnread(s) {
+  if (!s.unread) { seenLocally.delete(s.blockId); return false; }
+  return !seenLocally.has(s.blockId);
+}
+$('list').addEventListener('mouseover', (e) => {
+  const card = e.target.closest('.card.unread');
+  if (!card) return;
+  const id = card.dataset.block;
+  seenLocally.add(id);
+  card.classList.remove('unread');
+  render();
+  api('/api/seen', { blockId: id }).catch(() => {});
+});
+const openCompose = new Set();
+// Short confirmations next to the project name ("Sent ✓", "Copied ✓")
+const flash = new Map();
+function showFlash(id, text) {
+  flash.set(id, { text, until: Date.now() + 2500 });
+  render();
+  setTimeout(render, 2600);
+}
+
+async function copyRef(id) {
+  try {
+    const r = await api('/api/copy-ref', { blockId: id });
+    if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+    showFlash(id, 'Copied ✓');
+  } catch (err) {
+    showFlash(id, `Copy failed: ${err.message}`);
+  }
+}
+
+async function goTo(id) {
+  try { await api('/api/focus', { blockId: id }); } finally { refresh(); }
+}
+function openMessage(id) {
+  openCompose.add(id);
+  render();
+  document.querySelector(`[data-compose="${CSS.escape(id)}"]`)?.text.focus();
+}
+function closeMenu() {
+  if (openMenu === null) return;
+  openMenu = null;
+  render();
+}
+
+$('list').addEventListener('click', (e) => {
+  if (e.target.closest('.compose')) return;
+  const menuBtn = e.target.closest('[data-menu]');
+  if (menuBtn) {
+    openMenu = openMenu === menuBtn.dataset.menu ? null : menuBtn.dataset.menu;
+    return render();
+  }
+  const item = e.target.closest('[data-action]');
+  if (item) {
+    openMenu = null;
+    const actions = { goto: goTo, message: openMessage, copy: copyRef };
+    return actions[item.dataset.action](item.dataset.id);
+  }
+  if (openMenu !== null) return closeMenu(); // first click outside just closes the menu
+  const card = e.target.closest('.card');
+  if (card) goTo(card.dataset.block);
+});
+// composedPath, not target.closest: the list handler re-renders, so by now the clicked node is detached
+document.addEventListener('click', (e) => { if (!e.composedPath().includes($('list'))) closeMenu(); });
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  closeMenu();
+  // Esc in an empty message field hides it
+  const form = e.target.closest?.('[data-compose]');
+  if (form && !(drafts.get(form.dataset.compose) || '').trim()) {
+    openCompose.delete(form.dataset.compose);
+    render();
+  }
+});
+
+// An empty message field closes when focus leaves it. Re-renders also move focus (render puts it
+// back on the new input), so check a moment later whether focus really left this form.
+$('list').addEventListener('focusout', (e) => {
+  const form = e.target.closest?.('[data-compose]');
+  if (!form) return;
+  const id = form.dataset.compose;
+  setTimeout(() => {
+    const current = document.querySelector(`[data-compose="${CSS.escape(id)}"]`);
+    if (!current || current.contains(document.activeElement) || sending.has(id)) return;
+    if ((drafts.get(id) || '').trim()) return;
+    openCompose.delete(id);
+    render();
+  }, 150);
+});
+
+$('list').addEventListener('input', (e) => {
+  const form = e.target.closest('[data-compose]');
+  if (form) drafts.set(form.dataset.compose, e.target.value);
+});
+
+$('list').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const id = form.dataset.compose;
+  const text = (drafts.get(id) || '').trim();
+  if (!text || sending.has(id)) return;
+  sending.add(id);
+  form.text.disabled = true;
+  let note = 'Sent', failed = false;
+  try {
+    const r = await api('/api/send', { blockId: id, text });
+    if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+    drafts.delete(id);
+  } catch (err) {
+    note = `Failed: ${err.message}`;
+    failed = true;
+  } finally {
+    sending.delete(id);
+  }
+  if (failed) {
+    notes.set(id, { text: note, err: true, until: Date.now() + 8000 });
+  } else {
+    openCompose.delete(id);
+    showFlash(id, 'Sent ✓');
+  }
+  await refresh();
+  if (failed) document.querySelector(`[data-compose="${CSS.escape(id)}"]`)?.text.focus();
+});
+
+const soundToggle = $('sound');
+const volume = $('volume');
+function syncSoundControls() {
+  volume.disabled = !soundToggle.checked;
+  volume.style.setProperty('--fill', `${volume.value}%`);
+  $('volumeVal').textContent = volume.value;
+}
+
+const settingsBtn = $('settingsBtn');
+const settingsPanel = $('settingsPanel');
+function setSettingsOpen(open) {
+  settingsPanel.hidden = !open;
+  settingsBtn.setAttribute('aria-expanded', String(open));
+}
+settingsBtn.onclick = () => setSettingsOpen(settingsPanel.hidden);
+document.addEventListener('click', (e) => { if (!e.target.closest('.settings')) setSettingsOpen(false); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') setSettingsOpen(false); });
+if (location.hash === '#settings') setSettingsOpen(true);
+fetch('/api/config').then((r) => r.json()).then((c) => {
+  soundToggle.checked = !!c.sound;
+  volume.value = c.volume;
+  syncSoundControls();
+}).catch(() => {});
+soundToggle.onchange = () => { syncSoundControls(); api('/api/config', { sound: soundToggle.checked }).catch(() => {}); };
+volume.oninput = syncSoundControls;
+// 'change' fires on release, so each adjustment plays one preview
+volume.onchange = () => api('/api/config', { volume: Number(volume.value) }).catch(() => {});
+
+refresh();
+setInterval(refresh, 2000);
+</script>
+</body>
+</html>

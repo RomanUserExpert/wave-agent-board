@@ -1,0 +1,7 @@
+# build output (wave-input.exe ships with GitHub Releases)
+bin/
+
+node_modules/
+*.log
+.DS_Store
+Thumbs.db

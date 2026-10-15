@@ -1,0 +1,25 @@
+{
+  "name": "wave-agent-board",
+  "version": "0.1.0",
+  "description": "A Wave Terminal widget that shows every Claude Code session in your workspace: what it's doing, whether it needs you, and lets you jump to it or message it.",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "author": "RomanUserExpert",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/RomanUserExpert/wave-agent-board.git"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "os": [
+    "win32"
+  ],
+  "scripts": {
+    "setup": "node src/install.mjs",
+    "uninstall": "node src/install.mjs --uninstall",
+    "start": "node src/server.mjs",
+    "build": "cd wave-input && go build -trimpath -ldflags \"-s -w\" -o ../bin/wave-input.exe ."
+  }
+}
