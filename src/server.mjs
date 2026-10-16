@@ -185,6 +185,7 @@ function fillSession(s, sb) {
   s.recap = sb?.recap || '';
   s.spinner = sb?.spinner || '';
   s.bgAgents = sb?.bgAgents || 0;
+  s.ending = pendingEnds.get(s.blockId)?.phase || null;
   s.updatedAt = st?.updatedAt || null;
   s.since = st?.workingSince || null;
 
@@ -419,6 +420,67 @@ async function endSession(blockId) {
   if (!(await claudeExited(blockId, since))) throw new Error("Claude Code didn't exit");
 }
 
+// "End session" first asks the agent to wrap up, then exits once it has. Override the text with
+// "wrapUpPrompt" in config.json
+const WRAP_UP_PROMPT =
+  "I'm about to close this session; it will exit as soon as you finish this reply. Before that, wrap up: " +
+  'save any progress worth keeping (commit only if that is how we have been working here), update docs and memory ' +
+  'if this session changed something they describe, and note anything left unfinished so the next session can pick it up. ' +
+  "Don't start new work and don't ask me questions; if something needs my decision, list it briefly at the end.";
+const WRAP_UP_TIMEOUT = 30 * 60_000;
+const pendingEnds = new Map(); // blockId -> { phase: 'waiting' | 'wrapping-up', cancelled }
+
+const findSession = (data, blockId) => data.tabs.flatMap((t) => t.sessions).find((x) => x.blockId === blockId);
+
+async function sessionNow(blockId) {
+  cache.at = 0;
+  return findSession(await getSnapshot(), blockId);
+}
+
+async function wrapUpAndEnd(blockId, job) {
+  const deadline = Date.now() + WRAP_UP_TIMEOUT;
+  const alive = () => !job.cancelled && Date.now() < deadline;
+  // let the current turn (and its background agents) finish; a question or permission prompt waits for you
+  let s;
+  while (alive() && (s = await sessionNow(blockId))?.agent && s.state !== 'idle') await sleep(2000);
+  if (!alive() || !s?.agent) return;
+
+  job.phase = 'wrapping-up';
+  const sentAt = Date.now();
+  await sendInput(blockId, getConfig().wrapUpPrompt || WRAP_UP_PROMPT);
+  log('wrap-up prompt sent', blockId);
+  // done when the Stop hook fires for the reply (it skips stops while background agents run);
+  // for sessions without hooks, when the screen goes from working back to idle
+  let sawWorking = false;
+  let idleSince = 0;
+  while (alive()) {
+    await sleep(2000);
+    s = await sessionNow(blockId);
+    if (!s?.agent) return; // exited some other way
+    const st = readJson(path.join(STATUS_DIR, `${blockId}.json`));
+    if (s.state === 'working') { sawWorking = true; idleSince = 0; }
+    else if (s.state === 'idle') idleSince ||= Date.now();
+    else idleSince = 0;
+    const stopped = st?.doneAt > sentAt;
+    if (s.state === 'idle' && (stopped || (sawWorking && Date.now() - idleSince > 4000))) break;
+  }
+  if (!alive()) return;
+  await endSession(blockId);
+  log('session ended after wrap-up', blockId);
+}
+
+function startEnd(blockId) {
+  if (pendingEnds.has(blockId)) return;
+  const job = { phase: 'waiting', cancelled: false };
+  pendingEnds.set(blockId, job);
+  wrapUpAndEnd(blockId, job)
+    .catch((e) => log('end session failed', blockId, e.message))
+    .finally(() => {
+      if (pendingEnds.get(blockId) === job) pendingEnds.delete(blockId);
+      cache.at = 0;
+    });
+}
+
 // ---------- HTTP ----------
 function send(res, code, body, type = 'application/json; charset=utf-8') {
   res.writeHead(code, { 'Content-Type': type, 'Cache-Control': 'no-store' });
@@ -495,10 +557,20 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { ok: true });
     }
     if (req.method === 'POST' && url.pathname === '/api/end') {
-      const { blockId } = await readBody(req);
+      const { blockId, now, cancel } = await readBody(req);
       if (!blockId) return send(res, 400, { error: 'blockId is required' });
-      await endSession(blockId);
-      log('session ended from the board', blockId);
+      if (cancel) {
+        const job = pendingEnds.get(blockId);
+        if (job) job.cancelled = true;
+        pendingEnds.delete(blockId);
+        log('end session cancelled', blockId);
+      } else if (now) {
+        if (pendingEnds.has(blockId)) pendingEnds.get(blockId).cancelled = true;
+        await endSession(blockId);
+        log('session ended from the board', blockId);
+      } else {
+        startEnd(blockId);
+      }
       cache.at = 0;
       return send(res, 200, { ok: true });
     }

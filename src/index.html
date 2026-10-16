@@ -114,6 +114,7 @@
   .summary { color: var(--text-3); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
   .mono { margin-top: 4px; font: 12px/1.4 var(--mono); color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .working .mono.spin { color: rgba(88, 193, 66, .75); }
+  .ending { color: var(--error); font-size: 12px; }
   .hint { margin-top: 4px; color: var(--grey); font-size: 12px; }
 
   .actions { grid-row: 1; grid-column: 2; align-self: start; margin: -4px -5px -4px 0; position: relative; }
@@ -205,6 +206,15 @@ function ago(ts) {
   return `${Math.floor(m / 60)}h ${m % 60}m`;
 }
 
+function endItemHtml(s, action, label, title) {
+  const armed = armedEnd?.id === s.blockId && armedEnd.action === action;
+  return `<button class="item danger${armed ? ' armed' : ''}" data-action="${action}" data-id="${esc(s.blockId)}" title="${title}">
+    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.77.04"/>
+    </svg>${armed ? 'Click again to confirm' : label}
+  </button>`;
+}
+
 function sessionHtml(s) {
   const lines = [];
   if (s.state === 'shell') {
@@ -214,6 +224,8 @@ function sessionHtml(s) {
     if ((s.state === 'working' || s.state === 'waiting') && s.activity)
       lines.push(`<div class="line"><span class="k">Now</span>${esc(s.activity)}</div>`);
     if (s.state === 'working' && s.spinner) lines.push(`<div class="mono spin">${esc(s.spinner)}</div>`);
+    if (s.ending)
+      lines.push(`<div class="line ending">${s.ending === 'waiting' ? 'Will wrap up and exit after this turn' : 'Wrapping up, then exiting'}</div>`);
     if (s.bgAgents && !/background agent/.test(s.spinner || ''))
       lines.push(`<div class="mono spin">${s.bgAgents} background agent${s.bgAgents > 1 ? 's' : ''} running</div>`);
     const summary = s.state === 'idle' ? (s.lastMessage || s.recap) : s.recap;
@@ -254,11 +266,12 @@ function sessionHtml(s) {
               <rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/>
             </svg>Copy session ID
           </button>
-          <button class="item danger${armedEnd === s.blockId ? ' armed' : ''}" data-action="end" data-id="${esc(s.blockId)}" title="Types /exit into the terminal; the terminal itself stays open">
+          ${s.ending ? `<button class="item" data-action="cancelEnd" data-id="${esc(s.blockId)}">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.77.04"/>
-            </svg>${armedEnd === s.blockId ? 'Click again to end' : 'End session'}
-          </button>` : ''}
+              <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
+            </svg>Cancel end
+          </button>` : endItemHtml(s, 'end', 'End session', 'Asks the agent to save progress and update docs, then exits once it has. The terminal stays open')}
+          ${endItemHtml(s, 'endNow', 'Exit now', 'Exits right away: interrupts a running turn, then /exit. The terminal stays open')}` : ''}
         </div>
       </div>
       <div class="body">${lines.join('')}</div>
@@ -433,15 +446,15 @@ async function copyRef(id) {
 }
 
 // "End session" asks for a second click instead of a dialog (dialogs block the Wave widget)
-let armedEnd = null;
+let armedEnd = null; // { id, action }
 let armTimer = null;
-async function endSession(id) {
+async function endSession(id, opts, pending, done) {
   armedEnd = null;
-  showFlash(id, 'Ending…');
+  if (pending) showFlash(id, pending);
   try {
-    const r = await api('/api/end', { blockId: id });
+    const r = await api('/api/end', { blockId: id, ...opts });
     if (!r.ok) throw new Error((await r.json()).error || r.statusText);
-    showFlash(id, 'Ended ✓');
+    if (done) showFlash(id, done);
   } catch (err) {
     showFlash(id, `End failed: ${err.message}`);
   }
@@ -480,14 +493,20 @@ $('list').addEventListener('click', (e) => {
   }
   const item = e.target.closest('[data-action]');
   if (item) {
-    if (item.dataset.action === 'end' && armedEnd !== item.dataset.id) {
-      armedEnd = item.dataset.id;
+    const { action, id } = item.dataset;
+    if ((action === 'end' || action === 'endNow') && !(armedEnd?.id === id && armedEnd.action === action)) {
+      armedEnd = { id, action };
       clearTimeout(armTimer);
       armTimer = setTimeout(() => { armedEnd = null; render(); }, 3000);
       return render();
     }
     openMenu = null;
-    const actions = { goto: goTo, message: openMessage, copy: copyRef, end: endSession };
+    const actions = {
+      goto: goTo, message: openMessage, copy: copyRef,
+      end: (id) => endSession(id, {}, null, 'Wrapping up…'),
+      endNow: (id) => endSession(id, { now: true }, 'Ending…', 'Ended ✓'),
+      cancelEnd: (id) => endSession(id, { cancel: true }, null, 'End cancelled'),
+    };
     return actions[item.dataset.action](item.dataset.id);
   }
   if (openMenu !== null) return closeMenu(); // first click outside just closes the menu

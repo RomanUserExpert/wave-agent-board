@@ -18,8 +18,10 @@ without leaving the board.
   into Claude Code itself.
 - **Copy session ID.** Copies a short reference: the session ID, its transcript path and the command to message it.
   Paste it into another Claude session and that one can read the first session's full context or talk to it.
-- **End session.** Exits Claude Code in that terminal (click twice to confirm). A running turn is interrupted
-  first and anything typed in the prompt is cleared; then `/exit` goes in. The terminal itself stays open.
+- **End session.** Lets the current turn finish, asks the agent to wrap up (save progress, update docs and memory,
+  note what's left), and exits once it has. The card shows it's ending; you can cancel. The request text can be
+  changed with `"wrapUpPrompt"` in `~/.wave-agent-board/config.json`. **Exit now** skips the wrap-up: it interrupts
+  a running turn, clears the prompt and types `/exit`. Both ask for a second click; the terminal itself stays open.
 - **Sound when done.** A soft chime when an agent finishes, with adjustable volume. Handy if you run agents in
   bypass mode and rarely get permission prompts. A session with background agents still running counts as
   working, so the chime waits until they're done too.
