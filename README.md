@@ -62,6 +62,20 @@ to start it by hand, run `npm start` in any Wave terminal.
 
 To remove everything: `npm run uninstall`.
 
+## On your phone
+
+The board works from a phone through [Tailscale](https://tailscale.com/): you see every session, can message
+agents (photos included) and end sessions. Nothing is exposed to the internet or your Wi-Fi; the board stays on
+`127.0.0.1` and only your own devices in your tailnet can reach it.
+
+1. Install Tailscale on the PC and the phone and sign in to the same account on both.
+2. On the PC: `npm run mobile`. It prints the address, like `https://desktop-abc.tail1234.ts.net/`.
+   The first time, Tailscale may ask you to enable HTTPS for your tailnet; follow its link and run it again.
+3. Open that address on the phone. "Add to Home Screen" makes it open like an app.
+
+On the phone, tapping a card opens its menu; "Go to terminal" isn't there, since it would switch tabs on the PC.
+To turn it off: `npm run mobile -- --off`.
+
 ## How it works
 
 ```
@@ -93,6 +107,10 @@ The server listens on `127.0.0.1` only. Because it can type into your terminals,
 the `Host` and `Origin` headers must point at the board itself, and write requests must carry an
 `X-Agent-Board` header, which forces a CORS preflight that the server never approves. Other web pages
 can't reach it.
+
+Phone access goes through `tailscale serve`, which proxies HTTPS from your tailnet to the board and tells it which
+Tailscale user is asking. The server lets a request in only if that login is listed in `"tailscaleUsers"` in
+`config.json` (`npm run mobile` adds yours), so a device shared into someone else's tailnet doesn't give them access.
 
 The hook stores Wave's environment, including `WAVETERM_JWT`, in `~/.wave-agent-board/wave-env.json` so a
 server started from a hook can call `wsh`. That's the same token every Wave terminal already has in its environment.

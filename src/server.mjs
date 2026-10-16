@@ -500,10 +500,20 @@ async function readBody(req) {
 // /api/send types into terminals, so block other web pages from reaching the API:
 // the Host check stops DNS rebinding, and the custom header forces a CORS preflight we never allow.
 const ALLOWED_HOSTS = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`]);
+// Phone access goes through `tailscale serve` (npm run mobile): it proxies https://<machine>.<tailnet>.ts.net
+// to us and adds Tailscale-User-Login for whoever is on the other end. Only logins listed in
+// config.json "tailscaleUsers" get in; a device shared into someone else's tailnet doesn't.
+const isRemote = (req) => !ALLOWED_HOSTS.has(req.headers.host);
+function isTailscaleOwner(req) {
+  const login = req.headers['tailscale-user-login'];
+  return /^[a-z0-9-]+(\.[a-z0-9-]+)*\.ts\.net$/i.test(req.headers.host || '') && !!login &&
+    (getConfig().tailscaleUsers || []).includes(login);
+}
 function isTrustedRequest(req) {
-  if (!ALLOWED_HOSTS.has(req.headers.host)) return false;
+  const remote = isRemote(req);
+  if (remote && !isTailscaleOwner(req)) return false;
   const origin = req.headers.origin;
-  if (origin && !ALLOWED_HOSTS.has(origin.replace(/^https?:\/\//, ''))) return false;
+  if (origin && (remote ? origin !== `https://${req.headers.host}` : !ALLOWED_HOSTS.has(origin.replace(/^https?:\/\//, '')))) return false;
   return req.method === 'GET' || req.headers['x-agent-board'] === '1';
 }
 
@@ -517,6 +527,8 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/sessions') return send(res, 200, await getSnapshot());
     if (req.method === 'GET' && url.pathname === '/api/ping') return send(res, 200, { ok: true, pid: process.pid });
     if (req.method === 'POST' && url.pathname === '/api/focus') {
+      // switching tabs on the PC makes no sense from a phone
+      if (isRemote(req)) return send(res, 400, { error: 'not available remotely' });
       const { blockId } = await readBody(req);
       markSeen(blockId);
       return send(res, 200, await focusSession(blockId));
@@ -526,6 +538,8 @@ const server = http.createServer(async (req, res) => {
       cache.at = 0;
       const s = (await getSnapshot()).tabs.flatMap((t) => t.sessions).find((x) => x.blockId === blockId);
       if (!s) return send(res, 404, { error: 'session not found' });
+      // from a phone the page copies it to the phone's clipboard instead
+      if (isRemote(req)) return send(res, 200, { ok: true, text: sessionReference(s) });
       await setClipboard(sessionReference(s));
       return send(res, 200, { ok: true });
     }

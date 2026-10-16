@@ -2,7 +2,11 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
 <title>Agent Board</title>
 <style>
   /* Tokens mirror Wave Terminal's theme.scss */
@@ -114,6 +118,12 @@
   .summary { color: var(--text-3); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
   .mono { margin-top: 4px; font: 12px/1.4 var(--mono); color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .working .mono.spin { color: rgba(88, 193, 66, .75); }
+  @media (pointer: coarse) {
+    button.go { width: 34px; height: 34px; }
+    .menu { width: 200px; }
+    .menu .item { padding: 11px 10px; font-size: 14px; }
+    body { padding-bottom: env(safe-area-inset-bottom); }
+  }
   .ending { color: var(--error); font-size: 12px; }
   .hint { margin-top: 4px; color: var(--grey); font-size: 12px; }
 
@@ -187,6 +197,8 @@
 
 <script>
 const $ = (id) => document.getElementById(id);
+// Opened from another device through Tailscale rather than inside Wave on this PC
+const REMOTE = !['127.0.0.1', 'localhost'].includes(location.hostname);
 const STATE_LABEL = { working: 'working', waiting: 'needs you', idle: 'idle', shell: 'terminal' };
 let data = null;
 
@@ -251,11 +263,11 @@ function sessionHtml(s) {
           </svg>
         </button>
         <div class="popover menu" ${openMenu === s.blockId ? '' : 'hidden'}>
-          <button class="item" data-action="goto" data-id="${esc(s.blockId)}">
+          ${REMOTE ? '' : `<button class="item" data-action="goto" data-id="${esc(s.blockId)}">
             <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M9.5 2.5h4v4"/><path d="M13.5 2.5 7.5 8.5"/><path d="M12 9.5v3a1 1 0 0 1-1 1H3.5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h3"/>
             </svg>Go to terminal
-          </button>
+          </button>`}
           ${s.agent ? `<button class="item" data-action="message" data-id="${esc(s.blockId)}">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
@@ -439,6 +451,8 @@ async function copyRef(id) {
   try {
     const r = await api('/api/copy-ref', { blockId: id });
     if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+    const { text } = await r.json();
+    if (text) await navigator.clipboard.writeText(text); // opened remotely: copy on this device
     showFlash(id, 'Copied ✓');
   } catch (err) {
     showFlash(id, `Copy failed: ${err.message}`);
@@ -511,7 +525,10 @@ $('list').addEventListener('click', (e) => {
   }
   if (openMenu !== null) return closeMenu(); // first click outside just closes the menu
   const card = e.target.closest('.card');
-  if (card) goTo(card.dataset.block);
+  if (!card) return;
+  // from a phone, tapping a card opens its menu: there's no terminal here to go to
+  if (REMOTE) { openMenu = card.dataset.block; armedEnd = null; return render(); }
+  goTo(card.dataset.block);
 });
 // composedPath, not target.closest: the list handler re-renders, so by now the clicked node is detached
 document.addEventListener('click', (e) => { if (!e.composedPath().includes($('list'))) closeMenu(); });

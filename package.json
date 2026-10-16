@@ -20,6 +20,7 @@
     "setup": "node src/install.mjs",
     "uninstall": "node src/install.mjs --uninstall",
     "start": "node src/server.mjs",
+    "mobile": "node src/mobile.mjs",
     "build": "cd wave-input && go build -trimpath -ldflags \"-s -w\" -o ../bin/wave-input.exe ."
   }
 }
