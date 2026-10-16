@@ -36,7 +36,20 @@ export function ensureDirs() {
 export function writeJsonAtomic(file, data) {
   const tmp = `${file}.${process.pid}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(data));
-  fs.renameSync(tmp, file);
+  // On Windows the rename fails with EPERM while another process has the target open
+  // (parallel hooks of background agents, the server reading it), so retry briefly
+  for (let i = 0; ; i++) {
+    try {
+      fs.renameSync(tmp, file);
+      return;
+    } catch (e) {
+      if (i >= 20 || (e.code !== 'EPERM' && e.code !== 'EBUSY' && e.code !== 'EACCES')) {
+        try { fs.unlinkSync(tmp); } catch {}
+        throw e;
+      }
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+    }
+  }
 }
 
 export function readJson(file) {
@@ -55,6 +68,24 @@ export function isPidAlive(pid) {
   } catch (e) {
     return e.code === 'EPERM';
   }
+}
+
+// Below its footer Claude Code lists background agents ("● main", "◯ general-purpose …").
+// Removes that panel (and trailing blank lines) from the end of `lines`, returns how many agents are running.
+export function stripAgentPanel(lines) {
+  let running = 0;
+  while (lines.length && (!lines[lines.length - 1].trim() || /^\s*[●◯○◉]\s+\S/.test(lines[lines.length - 1]))) {
+    if (/^\s*[◯○◉]\s+\S/.test(lines.pop())) running++;
+  }
+  return running;
+}
+
+// Background agents running in the given Wave terminal, read from its screen (-1 if it can't be read)
+export function runningBackgroundAgents(blockId) {
+  const wsh = process.env.WAVETERM_WSHBINDIR ? path.join(process.env.WAVETERM_WSHBINDIR, 'wsh.exe') : 'wsh';
+  const r = spawnSync(wsh, ['termscrollback', '-b', blockId], { encoding: 'utf8', windowsHide: true, timeout: 3000 });
+  if (r.status !== 0 || !r.stdout) return -1;
+  return stripAgentPanel(r.stdout.replace(/\r/g, '').split('\n'));
 }
 
 const MAX_TEXT = 300;

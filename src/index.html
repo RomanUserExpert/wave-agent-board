@@ -213,6 +213,8 @@ function sessionHtml(s) {
     if ((s.state === 'working' || s.state === 'waiting') && s.activity)
       lines.push(`<div class="line"><span class="k">Now</span>${esc(s.activity)}</div>`);
     if (s.state === 'working' && s.spinner) lines.push(`<div class="mono spin">${esc(s.spinner)}</div>`);
+    if (s.bgAgents && !/background agent/.test(s.spinner || ''))
+      lines.push(`<div class="mono spin">${s.bgAgents} background agent${s.bgAgents > 1 ? 's' : ''} running</div>`);
     const summary = s.state === 'idle' ? (s.lastMessage || s.recap) : s.recap;
     if (summary) lines.push(`<div class="line summary">${esc(summary)}</div>`);
     if (!s.hooked && !s.task && !summary) lines.push(`<div class="hint">Started before hooks were installed — state only</div>`);

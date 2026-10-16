@@ -8,7 +8,7 @@ import { execFile, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import { getConfig, CONFIG_FILE, ensureSoundFile, psPlayCommand } from './sound.mjs';
-import { HOME_DIR, STATUS_DIR, PID_FILE, LOG_FILE, ENV_FILE, PORT, ensureDirs, writeJsonAtomic, readJson, isPidAlive, lastAssistantText } from './common.mjs';
+import { HOME_DIR, STATUS_DIR, PID_FILE, LOG_FILE, ENV_FILE, PORT, ensureDirs, writeJsonAtomic, readJson, isPidAlive, lastAssistantText, stripAgentPanel } from './common.mjs';
 
 // Started by a hook through WMI we get no Wave variables; take the ones the hook saved
 if (!process.env.WAVETERM_JWT) Object.assign(process.env, readJson(ENV_FILE) || {});
@@ -61,14 +61,17 @@ const CLAUDE_UI = /bypass permissions|\? for shortcuts|esc to interrupt|shift\+t
 
 function analyzeScrollback(text) {
   const lines = text.replace(/\r/g, '').split('\n');
-  while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+  // the background agents panel can push the footer out of view; set it aside
+  const bgAgents = stripAgentPanel(lines);
   const tail = lines.slice(-40);
   const tailText = tail.join('\n');
   // A working agent's spinner: "· Sublimating… (4m 55s · ↓ 25.1k tokens)"
-  const spinner = tail.slice(-12).findLast((l) => /^\s*[·✢✳✶✻✽*]\s+\S[^\n]*…\s*\(/.test(l));
+  // or, while it waits on subagents, "✻ Waiting for 5 background agents to finish"
+  const spinner = tail.slice(-12).findLast((l) => /^\s*[·✢✳✶✻✽*]\s+(\S[^\n]*…\s*\(|Waiting for \d+ background)/.test(l));
   const res = {
     claudeUi: CLAUDE_UI.test(tail.slice(-8).join('\n')),
-    busy: !!spinner || /esc to interrupt/i.test(tailText),
+    busy: !!spinner || bgAgents > 0 || /esc to interrupt/i.test(tailText),
+    bgAgents,
     spinner: spinner ? spinner.trim().replace(/^[·✢✳✶✻✽*]\s+/, '') : '',
     asking: /Do you want to (proceed|make this edit|create)|❯\s*1\.\s*Yes/i.test(tailText),
     recap: '',
@@ -181,6 +184,7 @@ function fillSession(s, sb) {
   s.lastMessage = freshLastMessage(st?.transcriptPath) || st?.lastMessage || '';
   s.recap = sb?.recap || '';
   s.spinner = sb?.spinner || '';
+  s.bgAgents = sb?.bgAgents || 0;
   s.updatedAt = st?.updatedAt || null;
   s.since = st?.workingSince || null;
 

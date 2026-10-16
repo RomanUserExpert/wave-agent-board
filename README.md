@@ -19,7 +19,8 @@ without leaving the board.
 - **Copy session ID.** Copies a short reference: the session ID, its transcript path and the command to message it.
   Paste it into another Claude session and that one can read the first session's full context or talk to it.
 - **Sound when done.** A soft chime when an agent finishes, with adjustable volume. Handy if you run agents in
-  bypass mode and rarely get permission prompts.
+  bypass mode and rarely get permission prompts. A session with background agents still running counts as
+  working, so the chime waits until they're done too.
 - **Grouped by tab** in your tab order, with the current tab marked.
 
 ## Requirements

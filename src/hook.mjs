@@ -4,7 +4,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { STATUS_DIR, PID_FILE, ensureDirs, writeJsonAtomic, readJson, isPidAlive, clip, lastAssistantText, spawnDetached, saveWaveEnv } from './common.mjs';
+import { STATUS_DIR, PID_FILE, ensureDirs, writeJsonAtomic, readJson, isPidAlive, clip, lastAssistantText, spawnDetached, saveWaveEnv, runningBackgroundAgents } from './common.mjs';
 import { playDoneSound } from './sound.mjs';
 
 function describeTool(name, input = {}) {
@@ -122,14 +122,18 @@ async function main() {
       }
       break;
     case 'Stop':
-    case 'StopFailure':
+    case 'StopFailure': {
       st.state = 'idle';
       st.activity = event === 'StopFailure' ? 'Stopped with an error' : '';
       st.workingSince = null;
       st.lastMessage = lastAssistantText(st.transcriptPath);
+      // The main thread stops between turns while background agents keep working;
+      // it's done only once they're finished too (the server then sees working -> idle)
+      if (event === 'Stop' && runningBackgroundAgents(blockId) > 0) break;
       st.doneAt = now; // 'finished, not looked at yet' until the board marks it seen
       await playDoneSound().catch(() => {});
       break;
+    }
     case 'SessionEnd':
       st.state = 'ended';
       st.activity = '';
