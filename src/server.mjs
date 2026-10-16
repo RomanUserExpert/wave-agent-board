@@ -379,6 +379,46 @@ async function sendInput(blockId, text, images = {}) {
   }
 }
 
+// ---------- End session ----------
+const ESC = '\x1b';
+const CTRL_C = '\x03';
+
+// The footer alone isn't enough: the /exit autocomplete list briefly covers it.
+// Exited means the SessionEnd hook ran, or a shell prompt is back
+async function claudeExited(blockId, since) {
+  for (let i = 0; i < 20; i++) {
+    await sleep(250);
+    const st = readJson(path.join(STATUS_DIR, `${blockId}.json`));
+    if (st?.state === 'ended' && st.updatedAt >= since) return true;
+    const sb = await scrollbackInfo(blockId);
+    if (sb && !sb.claudeUi && /^(PS .*>|.*[$#>%])\s*$/.test(sb.lastLine)) return true;
+  }
+  return false;
+}
+
+// Types /exit, so Claude Code shuts down the usual way (SessionEnd hook included); the terminal stays open
+async function endSession(blockId) {
+  const sb = await scrollbackInfo(blockId);
+  if (!sb?.claudeUi) throw new Error('no Claude Code session in this terminal');
+  const since = Date.now();
+  // interrupt a running turn or dismiss an open dialog first
+  if (sb.busy || sb.asking) {
+    await waveInput(blockId, ESC);
+    await sleep(600);
+  }
+  // Ctrl+C clears anything typed in the prompt
+  await waveInput(blockId, CTRL_C);
+  await sleep(200);
+  await waveInput(blockId, '/exit', ['-enter']);
+  if (await claudeExited(blockId, since)) return;
+  // still there: the double Ctrl+C exit
+  log('end session: /exit had no effect, sending Ctrl+C twice', blockId);
+  await waveInput(blockId, CTRL_C);
+  await sleep(150);
+  await waveInput(blockId, CTRL_C);
+  if (!(await claudeExited(blockId, since))) throw new Error("Claude Code didn't exit");
+}
+
 // ---------- HTTP ----------
 function send(res, code, body, type = 'application/json; charset=utf-8') {
   res.writeHead(code, { 'Content-Type': type, 'Cache-Control': 'no-store' });
@@ -451,6 +491,14 @@ const server = http.createServer(async (req, res) => {
       if (!blockId || !String(text || '').trim()) return send(res, 400, { error: 'blockId and text are required' });
       await sendInput(blockId, String(text), images && typeof images === 'object' ? images : {});
       markSeen(blockId);
+      cache.at = 0;
+      return send(res, 200, { ok: true });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/end') {
+      const { blockId } = await readBody(req);
+      if (!blockId) return send(res, 400, { error: 'blockId is required' });
+      await endSession(blockId);
+      log('session ended from the board', blockId);
       cache.at = 0;
       return send(res, 200, { ok: true });
     }

@@ -133,6 +133,7 @@
   .menu .item svg { color: var(--text-3); flex: none; }
   .menu .item:hover { background: var(--hover); color: var(--text); }
   .menu .item:hover svg { color: var(--accent); }
+  .menu .item.danger:hover svg, .menu .item.armed, .menu .item.armed svg { color: var(--error); }
   .sent { font-size: 12px; color: var(--accent); }
   .compose { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 6px; margin: 8px 0 0 15px; cursor: default; }
   .compose textarea {
@@ -252,6 +253,11 @@ function sessionHtml(s) {
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/>
             </svg>Copy session ID
+          </button>
+          <button class="item danger${armedEnd === s.blockId ? ' armed' : ''}" data-action="end" data-id="${esc(s.blockId)}" title="Types /exit into the terminal; the terminal itself stays open">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.77.04"/>
+            </svg>${armedEnd === s.blockId ? 'Click again to end' : 'End session'}
           </button>` : ''}
         </div>
       </div>
@@ -426,6 +432,22 @@ async function copyRef(id) {
   }
 }
 
+// "End session" asks for a second click instead of a dialog (dialogs block the Wave widget)
+let armedEnd = null;
+let armTimer = null;
+async function endSession(id) {
+  armedEnd = null;
+  showFlash(id, 'Ending…');
+  try {
+    const r = await api('/api/end', { blockId: id });
+    if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+    showFlash(id, 'Ended ✓');
+  } catch (err) {
+    showFlash(id, `End failed: ${err.message}`);
+  }
+  refresh();
+}
+
 async function goTo(id) {
   try { await api('/api/focus', { blockId: id }); } finally { refresh(); }
 }
@@ -437,6 +459,7 @@ function openMessage(id) {
 function closeMenu() {
   if (openMenu === null) return;
   openMenu = null;
+  armedEnd = null;
   render();
 }
 
@@ -452,12 +475,19 @@ $('list').addEventListener('click', (e) => {
   const menuBtn = e.target.closest('[data-menu]');
   if (menuBtn) {
     openMenu = openMenu === menuBtn.dataset.menu ? null : menuBtn.dataset.menu;
+    armedEnd = null;
     return render();
   }
   const item = e.target.closest('[data-action]');
   if (item) {
+    if (item.dataset.action === 'end' && armedEnd !== item.dataset.id) {
+      armedEnd = item.dataset.id;
+      clearTimeout(armTimer);
+      armTimer = setTimeout(() => { armedEnd = null; render(); }, 3000);
+      return render();
+    }
     openMenu = null;
-    const actions = { goto: goTo, message: openMessage, copy: copyRef };
+    const actions = { goto: goTo, message: openMessage, copy: copyRef, end: endSession };
     return actions[item.dataset.action](item.dataset.id);
   }
   if (openMenu !== null) return closeMenu(); // first click outside just closes the menu

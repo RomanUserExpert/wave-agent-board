@@ -18,6 +18,8 @@ without leaving the board.
   into Claude Code itself.
 - **Copy session ID.** Copies a short reference: the session ID, its transcript path and the command to message it.
   Paste it into another Claude session and that one can read the first session's full context or talk to it.
+- **End session.** Exits Claude Code in that terminal (click twice to confirm). A running turn is interrupted
+  first and anything typed in the prompt is cleared; then `/exit` goes in. The terminal itself stays open.
 - **Sound when done.** A soft chime when an agent finishes, with adjustable volume. Handy if you run agents in
   bypass mode and rarely get permission prompts. A session with background agents still running counts as
   working, so the chime waits until they're done too.
