@@ -1,8 +1,8 @@
 # wave-agent-board
 
 A [Wave Terminal](https://www.waveterm.dev/) widget that shows every Claude Code session in your workspace:
-what each one is doing, which ones need you, which ones just finished. Jump to any session or message it
-without leaving the board.
+what each one is doing, which ones need you, which ones just finished. Jump to any session, message it
+or end it without leaving the board.
 
 <img src="docs/screenshot.png" alt="The agent board inside Wave Terminal" width="370">
 
@@ -12,6 +12,12 @@ without leaving the board.
   blue when it finished and you haven't looked yet, grey when idle.
 - **What it's doing.** The task you gave it, the tool it's running right now ("Bash: Run integration tests",
   "Edit: colors.dark.json"), the live spinner line, and the last reply once it's done.
+- **Background agents.** A session waiting on subagents stays on the board as working, with how many are still
+  running.
+- **Card menu** (the ⚡ button):
+
+  <img src="docs/menu.png" alt="The card menu: Go to terminal, Message, Copy session ID, End session, Exit now" width="370">
+
 - **Go to terminal.** Switches to the right tab and focuses the terminal.
 - **Message.** Type into a session from the board. The text goes straight into the terminal, with no tab switching.
   Shift+Enter starts a new line. Paste, drop or attach images: they arrive as `[Image #N]`, just like pasting
@@ -23,8 +29,7 @@ without leaving the board.
   changed with `"wrapUpPrompt"` in `~/.wave-agent-board/config.json`. **Exit now** skips the wrap-up: it interrupts
   a running turn, clears the prompt and types `/exit`. Both ask for a second click; the terminal itself stays open.
 - **Sound when done.** A soft chime when an agent finishes, with adjustable volume. Handy if you run agents in
-  bypass mode and rarely get permission prompts. A session with background agents still running counts as
-  working, so the chime waits until they're done too.
+  bypass mode and rarely get permission prompts. It waits until background agents are done too.
 - **Grouped by tab** in your tab order, with the current tab marked.
 
 ## Requirements
