@@ -120,7 +120,7 @@ server started from a hook can call `wsh`. That's the same token every Wave term
 | Path | What's there |
 |---|---|
 | `~/.wave-agent-board/status/` | One status file per terminal |
-| `~/.wave-agent-board/config.json` | Sound on/off and volume |
+| `~/.wave-agent-board/config.json` | Sound on/off and volume, `wrapUpPrompt`, `tailscaleUsers` |
 | `~/.wave-agent-board/seen.json` | When you last looked at each finished session |
 | `~/.wave-agent-board/images/` | Images sent from the board, deleted after a week |
 | `~/.wave-agent-board/server.log` | Server log |
