@@ -118,12 +118,9 @@
   .summary { color: var(--text-3); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
   .mono { margin-top: 4px; font: 12px/1.4 var(--mono); color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .working .mono.spin { color: rgba(88, 193, 66, .75); }
-  @media (pointer: coarse) {
-    button.go { width: 34px; height: 34px; }
-    .menu { width: 200px; }
-    .menu .item { padding: 11px 10px; font-size: 14px; }
-    body { padding-bottom: env(safe-area-inset-bottom); }
-  }
+  /* opened on a phone: scale the whole page up (text, spacing, tap targets) */
+  html.remote { zoom: 1.6; }
+  html.remote body { padding-bottom: env(safe-area-inset-bottom); }
   .ending { color: var(--error); font-size: 12px; }
   .hint { margin-top: 4px; color: var(--grey); font-size: 12px; }
 
@@ -199,6 +196,7 @@
 const $ = (id) => document.getElementById(id);
 // Opened from another device through Tailscale rather than inside Wave on this PC
 const REMOTE = !['127.0.0.1', 'localhost'].includes(location.hostname);
+document.documentElement.classList.toggle('remote', REMOTE);
 const STATE_LABEL = { working: 'working', waiting: 'needs you', idle: 'idle', shell: 'terminal' };
 let data = null;
 
