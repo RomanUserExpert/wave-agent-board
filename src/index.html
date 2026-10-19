@@ -421,21 +421,17 @@ const notes = new Map();
 const api = (p, body) => fetch(p, { method: 'POST', headers: { 'X-Agent-Board': '1' }, body: JSON.stringify(body) });
 
 let openMenu = null;
-// Hovering a finished card marks it seen; hide the dot right away instead of waiting for the next poll
+// Going to the terminal or sending it a message marks a finished card seen (the server records it);
+// hide the dot right away instead of waiting for the next poll
 const seenLocally = new Set();
 function isUnread(s) {
   if (!s.unread) { seenLocally.delete(s.blockId); return false; }
   return !seenLocally.has(s.blockId);
 }
-$('list').addEventListener('mouseover', (e) => {
-  const card = e.target.closest('.card.unread');
-  if (!card) return;
-  const id = card.dataset.block;
+function hideUnread(id) {
   seenLocally.add(id);
-  card.classList.remove('unread');
   render();
-  api('/api/seen', { blockId: id }).catch(() => {});
-});
+}
 const openCompose = new Set();
 // Short confirmations next to the project name ("Sent ✓", "Copied ✓")
 const flash = new Map();
@@ -474,6 +470,7 @@ async function endSession(id, opts, pending, done) {
 }
 
 async function goTo(id) {
+  hideUnread(id);
   try { await api('/api/focus', { blockId: id }); } finally { refresh(); }
 }
 function openMessage(id) {
@@ -615,6 +612,7 @@ $('list').addEventListener('submit', async (e) => {
     if (!r.ok) throw new Error((await r.json()).error || r.statusText);
     drafts.delete(id);
     images.delete(id);
+    hideUnread(id);
   } catch (err) {
     note = `Failed: ${err.message}`;
     failed = true;
