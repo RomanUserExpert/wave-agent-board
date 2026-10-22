@@ -99,7 +99,6 @@ async function scrollbackInfo(blockId) {
 // ---------- Snapshot ----------
 let cache = { at: 0, data: null, pending: null };
 let wshFailures = 0;
-let lastActiveTabId = null;
 
 async function buildSnapshot() {
   const ws = getWorkspace();
@@ -127,13 +126,10 @@ async function buildSnapshot() {
   if (results.length && results.every((ok) => !ok)) {
     if (++wshFailures >= 3) setTimeout(() => { log('wsh unavailable, exiting'); cleanup(); }, 100);
   } else wshFailures = 0;
-  // Switching to a tab (by any means, e.g. Wave's own tab bar) counts as looking at its finished sessions
-  if (lastActiveTabId && ws.activetabid !== lastActiveTabId) {
-    for (const s of tabs.find((t) => t.active)?.sessions || []) {
-      if (s.unread) { markSeen(s.blockId); s.unread = false; }
-    }
+  // Being on a tab (however you got there, e.g. Wave's own tab bar) counts as looking at its finished sessions
+  for (const s of tabs.find((t) => t.active)?.sessions || []) {
+    if (s.unread) { markSeen(s.blockId); s.unread = false; }
   }
-  lastActiveTabId = ws.activetabid;
   return {
     workspace: { id: ws.oid, name: ws.name },
     activeTabId: ws.activetabid,

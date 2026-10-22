@@ -9,7 +9,7 @@ or end it without leaving the board.
 ## Features
 
 - **Live status per session.** A dot shows the state: green while working, amber when the agent needs you,
-  blue when it finished and you haven't gone to it, switched to its tab or messaged it yet, grey when idle.
+  blue when it finished and you haven't gone to it, opened its tab or messaged it yet, grey when idle.
 - **What it's doing.** The task you gave it, the tool it's running right now ("Bash: Run integration tests",
   "Edit: colors.dark.json"), the live spinner line, and the last reply once it's done.
 - **Background agents.** A session waiting on subagents stays on the board as working, with how many are still
