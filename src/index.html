@@ -361,15 +361,19 @@ function render() {
   }
 }
 
-// Colors follow Wave's terminal theme. Default Dark keeps the board's own palette, which matches Wave's UI
+// Colors follow Wave's terminal theme. Default Dark keeps the board's own palette (it matches Wave's UI), only the background follows
 let appliedTheme = '';
 function applyTheme(t) {
   const key = JSON.stringify(t || {});
   if (key === appliedTheme) return;
   appliedTheme = key;
   const root = document.documentElement.style;
-  const vars = !t || t.name === 'default-dark' || !t.background ? {} : {
-    '--bg': t.background,
+  // the same background a terminal shows: the theme's, made transparent over Wave's window color
+  const bg = t?.background
+    ? `color-mix(in srgb, ${t.background} ${Math.round((1 - Math.min(1, Math.max(0, t.transparency ?? 0.5))) * 100)}%, rgb(34, 34, 34))`
+    : null;
+  const vars = !t || t.name === 'default-dark' || !t.background ? (bg ? { '--bg': bg } : {}) : {
+    '--bg': bg,
     '--panel-solid': `color-mix(in srgb, ${t.background} 92%, ${t.foreground || '#fff'})`,
     '--popover': `color-mix(in srgb, ${t.background} 85%, ${t.foreground || '#fff'})`,
     '--text': t.cmdtext || t.brightWhite || t.foreground,
@@ -386,7 +390,7 @@ function applyTheme(t) {
     if (vars[name]) root.setProperty(name, vars[name]);
     else root.removeProperty(name);
   }
-  document.querySelector('meta[name="theme-color"]').content = vars['--bg'] || '#000000';
+  document.querySelector('meta[name="theme-color"]').content = getComputedStyle(document.body).backgroundColor;
 }
 
 async function refresh() {

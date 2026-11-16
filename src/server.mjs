@@ -145,10 +145,13 @@ async function buildSnapshot() {
 const WAVE_CONFIG_DIR = path.join(os.homedir(), '.config', 'waveterm');
 const BUILTIN_THEMES = JSON.parse(fs.readFileSync(path.join(HERE, 'termthemes.json'), 'utf8'));
 function termTheme() {
-  const name = readJson(path.join(WAVE_CONFIG_DIR, 'settings.json'))?.['term:theme'] || 'default-dark';
+  const settings = readJson(path.join(WAVE_CONFIG_DIR, 'settings.json')) || {};
+  const name = settings['term:theme'] || 'default-dark';
   const custom = readJson(path.join(WAVE_CONFIG_DIR, 'termthemes.json')) || {};
   const theme = custom[name] || BUILTIN_THEMES[name];
-  return theme ? { name, ...theme } : { name };
+  // Wave draws the terminal background this transparent over its window (0.5 unless set)
+  const transparency = settings['term:transparency'] ?? 0.5;
+  return theme ? { name, transparency, ...theme } : { name, transparency };
 }
 
 // The Stop hook can fire before the final reply is flushed to the transcript,
