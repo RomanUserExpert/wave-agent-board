@@ -243,7 +243,7 @@ function getPsWorker() {
   psWorker.on('exit', () => { psWaiters.splice(0).forEach((r) => r()); psWorker = null; });
   psWorker.stdin.write('$ws = New-Object -ComObject WScript.Shell\n');
   // Real key events: WScript.SendKeys sometimes leaves Alt held down after a tab switch
-  psWorker.stdin.write(`Add-Type -Namespace AgentBoard -Name Keys -MemberDefinition '[DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);'\n`);
+  psWorker.stdin.write(`Add-Type -Namespace AgentBoard -Name Keys -MemberDefinition '[DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra); [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow(); [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hwnd, IntPtr pid); [DllImport("user32.dll")] public static extern IntPtr GetKeyboardLayout(uint thread); [DllImport("user32.dll")] public static extern IntPtr LoadKeyboardLayout(string id, uint flags); [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hwnd, uint msg, IntPtr wp, IntPtr lp);'\n`);
   return psWorker;
 }
 
@@ -258,12 +258,22 @@ function psRun(script) {
 
 const VK_ALT = 0x12;
 const KEYUP = 2;
-function sendKeysToWave(keys) {
+const WM_INPUTLANGCHANGEREQUEST = 0x50;
+function sendKeysToWave(keys, { latin = false } = {}) {
   // Wave on Windows: Alt+1..9 jumps to tab N, Alt+] / Alt+[ to the next/previous tab.
   // keys are virtual-key codes pressed with Alt held; Alt is released in finally, whatever happens.
+  // Wave matches ] and [ by the character, which a Russian layout turns into ъ and х: with latin, Wave's
+  // window is switched to US English for the presses and back to its own layout afterwards.
   const k = (vk, flags = 0) => `[AgentBoard.Keys]::keybd_event(${vk}, 0, ${flags}, [UIntPtr]::Zero)`;
   const presses = keys.map((vk) => `${k(vk)}; ${k(vk, KEYUP)}; Start-Sleep -Milliseconds 40`).join('; ');
-  return psRun(`$null = $ws.AppActivate('Wave'); Start-Sleep -Milliseconds 60; try { ${k(VK_ALT)}; ${presses} } finally { ${k(VK_ALT, KEYUP)} }`);
+  const K = '[AgentBoard.Keys]';
+  const toUs = latin
+    ? `$h = ${K}::GetForegroundWindow(); $kl = ${K}::GetKeyboardLayout(${K}::GetWindowThreadProcessId($h, [IntPtr]::Zero)); ` +
+      `$null = ${K}::PostMessage($h, ${WM_INPUTLANGCHANGEREQUEST}, [IntPtr]::Zero, ${K}::LoadKeyboardLayout('00000409', 0)); Start-Sleep -Milliseconds 100; `
+    : '';
+  // the restore is a posted message, which would overtake the key presses still in the input queue
+  const restore = latin ? `; Start-Sleep -Milliseconds 200; $null = ${K}::PostMessage($h, ${WM_INPUTLANGCHANGEREQUEST}, [IntPtr]::Zero, $kl)` : '';
+  return psRun(`$null = $ws.AppActivate('Wave'); Start-Sleep -Milliseconds 60; ${toUs}try { ${k(VK_ALT)}; ${presses} } finally { ${k(VK_ALT, KEYUP)}${restore} }`);
 }
 
 function setClipboard(text) {
@@ -293,7 +303,8 @@ async function focusSession(blockId) {
     const target = ws.tabids.indexOf(tabId);
     const current = ws.tabids.indexOf(ws.activetabid);
     let keys;
-    if (target < 8) keys = [0x31 + target]; // '1'..'8'
+    const absolute = target < 9;
+    if (absolute) keys = [0x31 + target]; // '1'..'9'
     else {
       const delta = target - current;
       keys = Array(Math.abs(delta)).fill(delta > 0 ? 0xdd : 0xdb); // ']' / '['
@@ -306,8 +317,8 @@ async function focusSession(blockId) {
       return false;
     };
     // an absolute hotkey is safe to retry, a relative one is not
-    await sendKeysToWave(keys);
-    if (!(await switched()) && target < 8) {
+    await sendKeysToWave(keys, { latin: !absolute });
+    if (!(await switched()) && absolute) {
       log('tab switch retry', tabId);
       await sendKeysToWave(keys);
       await switched();
