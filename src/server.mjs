@@ -424,6 +424,28 @@ async function endSession(blockId) {
   if (!(await claudeExited(blockId, since))) throw new Error("Claude Code didn't exit");
 }
 
+// ---------- Clear ----------
+// Claude Code gets /clear (a fresh conversation, same session); a plain shell gets `clear`.
+// A running turn is interrupted only when asked for this one terminal: "Clear all" skips busy agents.
+async function clearTerminal(blockId, { interrupt = true } = {}) {
+  const sb = await scrollbackInfo(blockId);
+  if (!sb) throw new Error('terminal not found');
+  if (!sb.claudeUi) {
+    await waveInput(blockId, 'clear', ['-enter']);
+    return 'cleared';
+  }
+  if (sb.busy || sb.asking) {
+    if (!interrupt) return 'skipped';
+    await waveInput(blockId, ESC);
+    await sleep(600);
+  }
+  // Ctrl+C clears anything typed in the prompt
+  await waveInput(blockId, CTRL_C);
+  await sleep(200);
+  await waveInput(blockId, '/clear', ['-enter']);
+  return 'cleared';
+}
+
 // "End session" first asks the agent to wrap up, then exits once it has. Override the text with
 // "wrapUpPrompt" in config.json
 const WRAP_UP_PROMPT =
@@ -573,6 +595,18 @@ const server = http.createServer(async (req, res) => {
       markSeen(blockId);
       cache.at = 0;
       return send(res, 200, { ok: true });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/clear') {
+      const { blockIds } = await readBody(req);
+      if (!Array.isArray(blockIds) || !blockIds.length) return send(res, 400, { error: 'blockIds are required' });
+      const single = blockIds.length === 1;
+      const results = {};
+      for (const id of blockIds) {
+        try { results[id] = await clearTerminal(String(id), { interrupt: single }); }
+        catch (e) { results[id] = 'failed'; log('clear failed', id, e.message); if (single) throw e; }
+      }
+      cache.at = 0;
+      return send(res, 200, { ok: true, results });
     }
     if (req.method === 'POST' && url.pathname === '/api/end') {
       const { blockId, now, cancel } = await readBody(req);

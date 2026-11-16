@@ -77,6 +77,10 @@
   .popover .label { flex: none; }
   .popover input[type=range] { flex: 1; width: auto; }
   .popover .val { width: 22px; text-align: right; color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .popover button.row { width: 100%; background: transparent; border: 0; font: 12px var(--font); text-align: left; cursor: pointer; }
+  .popover button.row:hover { background: var(--hover); color: var(--text); }
+  .popover button.row.armed { color: var(--error); }
+  .popover button.row:disabled { opacity: .5; cursor: default; }
   .popover .sep { height: 1px; background: var(--border); margin: 4px 2px; }
   input[type=range] { -webkit-appearance: none; appearance: none; width: 72px; height: 14px; background: transparent; cursor: pointer; }
   input[type=range]::-webkit-slider-runnable-track { height: 3px; border-radius: 2px; background: linear-gradient(to right, var(--accent) var(--fill, 27%), var(--border-strong) var(--fill, 27%)); }
@@ -187,6 +191,8 @@
       <div class="row"><span class="label">Volume</span><input type="range" id="volume" min="1" max="100" step="1" aria-label="Chime volume"><span class="val" id="volumeVal"></span></div>
       <div class="sep"></div>
       <label class="row toggle"><span>Show plain terminals</span><input type="checkbox" id="showShells"><span class="switch"></span></label>
+      <div class="sep"></div>
+      <button class="row" id="clearAll" title="Sends /clear to every idle agent and clear to every shown plain terminal. Agents that are busy are skipped">Clear all</button>
     </div>
   </div>
 </header>
@@ -222,6 +228,16 @@ function endItemHtml(s, action, label, title) {
     <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
       <path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.77.04"/>
     </svg>${armed ? 'Click again to confirm' : label}
+  </button>`;
+}
+
+function clearItemHtml(s) {
+  const armed = armedEnd?.id === s.blockId && armedEnd.action === 'clear';
+  const title = s.agent ? 'Sends /clear: a fresh conversation in the same terminal. Interrupts a running turn' : 'Runs clear in this terminal';
+  return `<button class="item danger${armed ? ' armed' : ''}" data-action="clear" data-id="${esc(s.blockId)}" title="${title}">
+    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="m7 21-4.3-4.3a1 1 0 0 1 0-1.4l10-10a1 1 0 0 1 1.4 0l5.6 5.6a1 1 0 0 1 0 1.4L11 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/>
+    </svg>${armed ? 'Click again to confirm' : 'Clear'}
   </button>`;
 }
 
@@ -282,6 +298,7 @@ function sessionHtml(s) {
             </svg>Cancel end
           </button>` : endItemHtml(s, 'end', 'End session', 'Asks the agent to save progress and update docs, then exits once it has. The terminal stays open')}
           ${endItemHtml(s, 'endNow', 'Exit now', 'Exits right away: interrupts a running turn, then /exit. The terminal stays open')}` : ''}
+          ${clearItemHtml(s)}
         </div>
       </div>
       <div class="body">${lines.join('')}</div>
@@ -469,6 +486,18 @@ async function endSession(id, opts, pending, done) {
   refresh();
 }
 
+async function clearOne(id) {
+  armedEnd = null;
+  try {
+    const r = await api('/api/clear', { blockIds: [id] });
+    if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+    showFlash(id, 'Cleared ✓');
+  } catch (err) {
+    showFlash(id, `Clear failed: ${err.message}`);
+  }
+  refresh();
+}
+
 async function goTo(id) {
   hideUnread(id);
   try { await api('/api/focus', { blockId: id }); } finally { refresh(); }
@@ -503,7 +532,7 @@ $('list').addEventListener('click', (e) => {
   const item = e.target.closest('[data-action]');
   if (item) {
     const { action, id } = item.dataset;
-    if ((action === 'end' || action === 'endNow') && !(armedEnd?.id === id && armedEnd.action === action)) {
+    if (['end', 'endNow', 'clear'].includes(action) && !(armedEnd?.id === id && armedEnd.action === action)) {
       armedEnd = { id, action };
       clearTimeout(armTimer);
       armTimer = setTimeout(() => { armedEnd = null; render(); }, 3000);
@@ -515,6 +544,7 @@ $('list').addEventListener('click', (e) => {
       end: (id) => endSession(id, {}, null, 'Wrapping up…'),
       endNow: (id) => endSession(id, { now: true }, 'Ending…', 'Ended ✓'),
       cancelEnd: (id) => endSession(id, { cancel: true }, null, 'End cancelled'),
+      clear: clearOne,
     };
     return actions[item.dataset.action](item.dataset.id);
   }
@@ -656,6 +686,45 @@ soundToggle.onchange = () => { syncSoundControls(); api('/api/config', { sound: 
 volume.oninput = syncSoundControls;
 // 'change' fires on release, so each adjustment plays one preview
 volume.onchange = () => api('/api/config', { volume: Number(volume.value) }).catch(() => {});
+
+// "Clear all" also asks for a second click
+const clearAllBtn = $('clearAll');
+let clearAllArmed = null;
+function resetClearAll(text = 'Clear all') {
+  clearTimeout(clearAllArmed);
+  clearAllArmed = null;
+  clearAllBtn.classList.remove('armed');
+  clearAllBtn.textContent = text;
+}
+clearAllBtn.onclick = async () => {
+  if (!clearAllArmed) {
+    clearAllBtn.classList.add('armed');
+    clearAllBtn.textContent = 'Click again to clear all';
+    clearAllArmed = setTimeout(() => resetClearAll(), 3000);
+    return;
+  }
+  resetClearAll('Clearing…');
+  clearAllBtn.disabled = true;
+  const ids = (data?.tabs || []).flatMap((t) => t.sessions)
+    .filter((s) => showShells.checked || s.state !== 'shell').map((s) => s.blockId);
+  let text = 'Nothing to clear';
+  try {
+    if (ids.length) {
+      const r = await api('/api/clear', { blockIds: ids });
+      if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+      const res = Object.values((await r.json()).results);
+      const n = (k) => res.filter((x) => x === k).length;
+      text = [`Cleared ${n('cleared')}`, n('skipped') && `${n('skipped')} busy skipped`, n('failed') && `${n('failed')} failed`]
+        .filter(Boolean).join(', ');
+    }
+  } catch (err) {
+    text = `Clear failed: ${err.message}`;
+  }
+  clearAllBtn.disabled = false;
+  resetClearAll(text);
+  setTimeout(() => { if (!clearAllArmed) clearAllBtn.textContent = 'Clear all'; }, 3000);
+  refresh();
+};
 
 refresh();
 setInterval(refresh, 2000);

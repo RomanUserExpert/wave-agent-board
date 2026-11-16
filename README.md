@@ -28,6 +28,9 @@ or end it without leaving the board.
   note what's left), and exits once it has. The card shows it's ending; you can cancel. The request text can be
   changed with `"wrapUpPrompt"` in `~/.wave-agent-board/config.json`. **Exit now** skips the wrap-up: it interrupts
   a running turn, clears the prompt and types `/exit`. Both ask for a second click; the terminal itself stays open.
+- **Clear.** In a Claude session it types `/clear` (interrupting a running turn first) for a fresh conversation; in a
+  plain terminal it runs `clear`. **Clear all** in the settings menu does it for every card shown, skipping agents
+  that are busy. Both ask for a second click.
 - **Sound when done.** A soft chime when an agent finishes, with adjustable volume. Handy if you run agents in
   bypass mode and rarely get permission prompts. It waits until background agents are done too.
 - **Grouped by tab** in your tab order, with the current tab marked.
