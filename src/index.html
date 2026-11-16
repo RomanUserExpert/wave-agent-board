@@ -14,6 +14,7 @@
     --bg: rgb(0, 0, 0);
     --panel: rgba(31, 33, 31, 0.5);
     --panel-solid: #0f100f;
+    --popover: #232323;
     --hover: rgba(255, 255, 255, 0.06);
     --border: rgba(255, 255, 255, 0.1);
     --border-strong: rgba(255, 255, 255, 0.16);
@@ -68,7 +69,7 @@
   .icon-btn:hover, .icon-btn[aria-expanded="true"] { color: var(--text); background: var(--hover); }
   .popover {
     position: absolute; right: 0; top: calc(100% + 6px); z-index: 10; width: 230px;
-    background: #232323; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 6px;
+    background: var(--popover); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 6px;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.8); padding: 6px;
   }
   .popover .row { display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 4px; color: var(--text-2); font-size: 12px; }
@@ -92,7 +93,7 @@
   .tab-title { display: flex; align-items: center; gap: 8px; margin: 0 0 6px 2px; font: 700 11px/1 var(--font); text-transform: uppercase; letter-spacing: .05em; color: var(--text-3); }
   .tab-title .num { color: var(--grey); font-variant-numeric: tabular-nums; }
   .tab-title.active { color: var(--text-2); }
-  .chip { text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--accent); border: 1px solid rgba(88, 193, 66, .4); border-radius: 4px; padding: 2px 6px; font-size: 10px; }
+  .chip { text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); border-radius: 4px; padding: 2px 6px; font-size: 10px; }
 
   .card {
     position: relative; display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; align-items: start;
@@ -101,7 +102,7 @@
     transition: background .1s, border-color .1s;
   }
   .card:hover { background: var(--hover); border-color: var(--border-strong); }
-  .card.waiting { border-color: rgba(224, 185, 86, .35); }
+  .card.waiting { border-color: color-mix(in srgb, var(--warning) 35%, transparent); }
   .card.shell { padding-top: 7px; padding-bottom: 7px; background: transparent; }
 
   .head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
@@ -110,7 +111,7 @@
   .dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--idle); align-self: center; }
   .working .dot { background: var(--accent); animation: blink 1.4s ease-in-out infinite; }
   .waiting .dot { background: var(--warning); }
-  .unread .dot { background: var(--done); box-shadow: 0 0 0 3px rgba(77, 156, 245, .18); }
+  .unread .dot { background: var(--done); box-shadow: 0 0 0 3px color-mix(in srgb, var(--done) 18%, transparent); }
   .shell .dot { background: transparent; border: 1px solid var(--grey); }
   @keyframes blink { 50% { opacity: .25; } }
   @media (prefers-reduced-motion: reduce) { .working .dot { animation: none; } }
@@ -121,7 +122,7 @@
   .line .k { color: var(--grey); margin-right: 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
   .summary { color: var(--text-3); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
   .mono { margin-top: 4px; font: 12px/1.4 var(--mono); color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .working .mono.spin { color: rgba(88, 193, 66, .75); }
+  .working .mono.spin { color: color-mix(in srgb, var(--accent) 75%, transparent); }
   /* opened on a phone: scale the whole page up (text, spacing, tap targets) */
   html.remote { zoom: 1.25; }
   html.remote body { padding-bottom: env(safe-area-inset-bottom); }
@@ -134,7 +135,7 @@
     background: transparent; color: var(--text-3); border: 1px solid transparent;
     border-radius: 4px; cursor: pointer;
   }
-  button.go:hover { color: var(--accent); background: rgba(88, 193, 66, .1); border-color: rgba(88, 193, 66, .5); }
+  button.go:hover { color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
   button.go:disabled { opacity: .5; cursor: default; }
   .menu { top: calc(100% + 4px); width: 170px; padding: 4px; }
   .menu .item {
@@ -154,7 +155,7 @@
     border-radius: 4px; font: 13px/16px var(--font); outline: none;
   }
   .compose textarea::placeholder { color: var(--grey); }
-  .compose textarea:focus { border-color: rgba(88, 193, 66, .6); background: rgba(255, 255, 255, 0.06); }
+  .compose textarea:focus { border-color: color-mix(in srgb, var(--accent) 60%, transparent); background: rgba(255, 255, 255, 0.06); }
   .compose textarea:disabled { opacity: .5; }
   .compose.drop textarea { border-color: var(--accent); border-style: dashed; }
   .thumbs { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 6px; }
@@ -167,7 +168,7 @@
   }
   .thumb button:hover { color: var(--error); }
   .compose .send, .compose .attach { color: var(--text-3); }
-  .compose .send:hover, .compose .attach:hover { color: var(--accent); background: rgba(88, 193, 66, .1); }
+  .compose .send:hover, .compose .attach:hover { color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
   .compose .note { font-size: 12px; color: var(--accent); white-space: nowrap; }
   .compose .note.err { color: var(--error); }
   .empty, .error { color: var(--text-3); padding: 28px 0; text-align: center; }
@@ -360,11 +361,41 @@ function render() {
   }
 }
 
+// Colors follow Wave's terminal theme. Default Dark keeps the board's own palette, which matches Wave's UI
+let appliedTheme = '';
+function applyTheme(t) {
+  const key = JSON.stringify(t || {});
+  if (key === appliedTheme) return;
+  appliedTheme = key;
+  const root = document.documentElement.style;
+  const vars = !t || t.name === 'default-dark' || !t.background ? {} : {
+    '--bg': t.background,
+    '--panel-solid': `color-mix(in srgb, ${t.background} 92%, ${t.foreground || '#fff'})`,
+    '--popover': `color-mix(in srgb, ${t.background} 85%, ${t.foreground || '#fff'})`,
+    '--text': t.cmdtext || t.brightWhite || t.foreground,
+    '--text-2': t.foreground,
+    '--text-3': t.gray || t.white,
+    '--grey': t.brightBlack || t.black,
+    '--idle': t.brightBlack || t.black,
+    '--accent': t.green,
+    '--warning': t.yellow,
+    '--done': t.blue,
+    '--error': t.red,
+  };
+  for (const name of ['--bg', '--panel-solid', '--popover', '--text', '--text-2', '--text-3', '--grey', '--idle', '--accent', '--warning', '--done', '--error']) {
+    if (vars[name]) root.setProperty(name, vars[name]);
+    else root.removeProperty(name);
+  }
+  document.querySelector('meta[name="theme-color"]').content = vars['--bg'] || '#000000';
+}
+
 async function refresh() {
   try {
     const r = await fetch('/api/sessions');
     if (!r.ok) throw new Error((await r.json()).error || r.statusText);
-    data = await r.json();    render();
+    data = await r.json();
+    applyTheme(data.theme);
+    render();
   } catch (e) {
     $('list').innerHTML = `<div class="error">Couldn't load sessions: ${esc(e.message)}</div>`;
   }

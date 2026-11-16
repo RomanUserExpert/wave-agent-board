@@ -34,6 +34,8 @@ or end it without leaving the board.
 - **Sound when done.** A soft chime when an agent finishes, with adjustable volume. Handy if you run agents in
   bypass mode and rarely get permission prompts. It waits until background agents are done too.
 - **Grouped by tab** in your tab order, with the current tab marked.
+- **Follows your Wave theme.** Colors come from the global terminal theme (`term:theme` in Wave's settings),
+  including custom themes from `termthemes.json`. Default Dark keeps the look of Wave's own UI.
 
 ## Requirements
 

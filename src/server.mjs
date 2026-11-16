@@ -134,8 +134,21 @@ async function buildSnapshot() {
     workspace: { id: ws.oid, name: ws.name },
     activeTabId: ws.activetabid,
     tabs,
+    theme: termTheme(),
     generatedAt: Date.now(),
   };
+}
+
+// The board takes its colors from Wave's terminal theme ("term:theme" in Wave's settings). Wave's own
+// themes are built into wavesrv, so a copy lives in termthemes.json; ~/.config/waveterm/termthemes.json
+// adds custom ones.
+const WAVE_CONFIG_DIR = path.join(os.homedir(), '.config', 'waveterm');
+const BUILTIN_THEMES = JSON.parse(fs.readFileSync(path.join(HERE, 'termthemes.json'), 'utf8'));
+function termTheme() {
+  const name = readJson(path.join(WAVE_CONFIG_DIR, 'settings.json'))?.['term:theme'] || 'default-dark';
+  const custom = readJson(path.join(WAVE_CONFIG_DIR, 'termthemes.json')) || {};
+  const theme = custom[name] || BUILTIN_THEMES[name];
+  return theme ? { name, ...theme } : { name };
 }
 
 // The Stop hook can fire before the final reply is flushed to the transcript,
