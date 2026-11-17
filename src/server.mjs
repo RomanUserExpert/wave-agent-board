@@ -514,9 +514,7 @@ async function startAgent(blockId, provider, modeId) {
   const sb = await scrollbackInfo(blockId);
   if (!sb) throw new Error('terminal not found');
   if (sb.claudeUi) throw new Error('an agent is already running here');
-  // Ctrl+C drops anything half-typed at the prompt
-  await waveInput(blockId, CTRL_C);
-  await sleep(200);
+  // no Ctrl+C first: a shell prompt (PowerShell through ConPTY) gets it as a stray "c"
   await waveInput(blockId, mode.command, ['-enter']);
   log('started', provider, modeId, blockId);
 }
