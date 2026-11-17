@@ -180,6 +180,7 @@
   button.start:hover, button.start[aria-expanded="true"] { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
   .menu.starts { right: 30px; width: 150px; }
   .modal-bg { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 16px; background: rgba(0, 0, 0, 0.55); }
+  .modal-bg[hidden] { display: none; }
   .modal {
     width: min(320px, 100%); max-height: calc(100vh - 32px); overflow-y: auto;
     background: var(--popover); border: 1px solid var(--border-strong); border-radius: var(--radius);
