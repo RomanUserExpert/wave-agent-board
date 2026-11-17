@@ -473,6 +473,54 @@ async function clearTerminal(blockId, { interrupt = true } = {}) {
   return 'cleared';
 }
 
+// ---------- Start an agent ----------
+// Started in a plain terminal by typing the command. Each mode is one command line; override or add
+// with "launchers" in config.json, same shape ({ claude: { label, modes: [{ id, label, hint, command }] } })
+const LAUNCHERS = {
+  claude: {
+    label: 'Claude Code',
+    modes: [
+      { id: 'default', label: 'Default', hint: 'Asks before edits and commands', command: 'claude' },
+      { id: 'acceptEdits', label: 'Accept edits', hint: 'Edits files freely, asks before commands', command: 'claude --permission-mode acceptEdits' },
+      { id: 'plan', label: 'Plan', hint: 'Reads and plans, changes nothing', command: 'claude --permission-mode plan' },
+      { id: 'auto', label: 'Auto', hint: 'Runs safe actions on its own, asks about risky ones', command: 'claude --permission-mode auto' },
+      { id: 'bypass', label: 'Bypass permissions', hint: 'Never asks. Use where nothing can break', command: 'claude --dangerously-skip-permissions' },
+    ],
+  },
+  codex: {
+    label: 'Codex',
+    modes: [
+      { id: 'default', label: 'Default', hint: 'Asks before commands that leave the sandbox', command: 'codex' },
+      { id: 'readOnly', label: 'Read only', hint: 'Can read and answer, not change files', command: 'codex --sandbox read-only' },
+      { id: 'fullAuto', label: 'Full auto', hint: 'Edits and runs commands in the workspace sandbox', command: 'codex --full-auto' },
+      { id: 'bypass', label: 'Bypass (yolo)', hint: 'No approvals, no sandbox', command: 'codex --dangerously-bypass-approvals-and-sandbox' },
+    ],
+  },
+  cursor: {
+    label: 'Cursor',
+    modes: [
+      { id: 'default', label: 'Default', hint: 'Asks before running commands', command: 'cursor-agent' },
+      { id: 'plan', label: 'Plan', hint: 'Plans without changing anything', command: 'cursor-agent --mode plan' },
+      { id: 'ask', label: 'Ask', hint: 'Answers questions, read only', command: 'cursor-agent --mode ask' },
+      { id: 'force', label: 'Force', hint: 'Runs commands without asking', command: 'cursor-agent --force' },
+    ],
+  },
+};
+const launchers = () => ({ ...LAUNCHERS, ...(getConfig().launchers || {}) });
+
+async function startAgent(blockId, provider, modeId) {
+  const mode = launchers()[provider]?.modes?.find((m) => m.id === modeId);
+  if (!mode) throw new Error('unknown agent or mode');
+  const sb = await scrollbackInfo(blockId);
+  if (!sb) throw new Error('terminal not found');
+  if (sb.claudeUi) throw new Error('an agent is already running here');
+  // Ctrl+C drops anything half-typed at the prompt
+  await waveInput(blockId, CTRL_C);
+  await sleep(200);
+  await waveInput(blockId, mode.command, ['-enter']);
+  log('started', provider, modeId, blockId);
+}
+
 // "End session" first asks the agent to wrap up, then exits once it has. Override the text with
 // "wrapUpPrompt" in config.json
 const WRAP_UP_PROMPT =
@@ -634,6 +682,14 @@ const server = http.createServer(async (req, res) => {
       }
       cache.at = 0;
       return send(res, 200, { ok: true, results });
+    }
+    if (req.method === 'GET' && url.pathname === '/api/launchers') return send(res, 200, launchers());
+    if (req.method === 'POST' && url.pathname === '/api/start') {
+      const { blockId, provider, mode } = await readBody(req);
+      if (!blockId) return send(res, 400, { error: 'blockId is required' });
+      await startAgent(String(blockId), String(provider), String(mode));
+      cache.at = 0;
+      return send(res, 200, { ok: true });
     }
     if (req.method === 'POST' && url.pathname === '/api/end') {
       const { blockId, now, cancel } = await readBody(req);

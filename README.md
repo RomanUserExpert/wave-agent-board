@@ -31,6 +31,11 @@ or end it without leaving the board.
 - **Clear.** In a Claude session it types `/clear` (interrupting a running turn first) for a fresh conversation; in a
   plain terminal it runs `clear`. **Clear all** in the settings menu does it for every card shown, skipping agents
   that are busy. Both ask for a second click.
+- **Start an agent.** A plain terminal's card has a **Start** button: pick Claude Code, Codex or Cursor, then a mode
+  (Claude: default, accept edits, plan, auto, bypass; Codex: default, read only, full auto, bypass; Cursor: default,
+  plan, ask, force), and the board types the command into that terminal. The last mode per agent is remembered.
+  Commands can be changed or added with `"launchers"` in `config.json`, in the shape `GET /api/launchers` returns.
+  Only Claude Code sessions are tracked on the board afterwards.
 - **Sound when done.** A soft chime when an agent finishes, with adjustable volume. Handy if you run agents in
   bypass mode and rarely get permission prompts. It waits until background agents are done too.
 - **Grouped by tab** in your tab order, with the current tab marked.

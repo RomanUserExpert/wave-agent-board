@@ -171,6 +171,34 @@
   .compose .send:hover, .compose .attach:hover { color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
   .compose .note { font-size: 12px; color: var(--accent); white-space: nowrap; }
   .compose .note.err { color: var(--error); }
+  .actions { display: flex; align-items: center; gap: 4px; }
+  button.start {
+    height: 22px; padding: 0 7px 0 8px; display: flex; align-items: center; gap: 4px;
+    background: transparent; color: var(--text-3); border: 1px solid var(--border-strong); border-radius: 4px;
+    font: 500 11px var(--font); cursor: pointer;
+  }
+  button.start:hover, button.start[aria-expanded="true"] { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
+  .menu.starts { right: 30px; width: 150px; }
+  .modal-bg { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 16px; background: rgba(0, 0, 0, 0.55); }
+  .modal {
+    width: min(320px, 100%); max-height: calc(100vh - 32px); overflow-y: auto;
+    background: var(--popover); border: 1px solid var(--border-strong); border-radius: var(--radius);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.8); padding: 14px;
+  }
+  .modal h2 { margin: 0 0 2px; font: 600 13px var(--font); color: var(--text); }
+  .modal .sub { margin-bottom: 10px; color: var(--text-3); font-size: 12px; overflow-wrap: anywhere; }
+  .mode { display: grid; grid-template-columns: auto 1fr; gap: 1px 9px; padding: 7px 8px; border-radius: 4px; cursor: pointer; }
+  .mode:hover { background: var(--hover); }
+  .mode input { grid-row: span 2; margin: 3px 0 0; accent-color: var(--accent); }
+  .mode b { font-weight: 500; color: var(--text-2); }
+  .mode input:checked ~ b { color: var(--text); }
+  .mode span, .mode code { grid-column: 2; color: var(--text-3); font-size: 11.5px; }
+  .mode code { font: 11px var(--mono); color: var(--grey); }
+  .modal .buttons { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 12px; }
+  .modal .buttons .err { flex: 1; color: var(--error); font-size: 12px; }
+  .modal .buttons button { height: 26px; padding: 0 12px; border-radius: 4px; font: 500 12px var(--font); cursor: pointer; border: 1px solid var(--border-strong); background: transparent; color: var(--text-2); }
+  .modal .buttons button.primary { background: var(--accent); border-color: var(--accent); color: #000; }
+  .modal .buttons button:disabled { opacity: .5; cursor: default; }
   .empty, .error { color: var(--text-3); padding: 28px 0; text-align: center; }
   .error { color: var(--error); }
 </style>
@@ -272,6 +300,12 @@ function sessionHtml(s) {
         ${flash.get(s.blockId)?.until > Date.now() ? `<span class="sent">${esc(flash.get(s.blockId).text)}</span>` : ''}
       </div>
       <div class="actions">
+        ${s.state === 'shell' && launchers ? `<button class="start" data-starts="${esc(s.blockId)}" title="Start an agent in this terminal" aria-haspopup="true" aria-expanded="${openStarts === s.blockId}">
+          Start<svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg>
+        </button>
+        <div class="popover menu starts" ${openStarts === s.blockId ? '' : 'hidden'}>
+          ${Object.entries(launchers).map(([k, l]) => `<button class="item" data-start="${esc(k)}" data-id="${esc(s.blockId)}">${esc(l.label)}</button>`).join('')}
+        </div>` : ''}
         <button class="go" data-menu="${esc(s.blockId)}" title="Actions" aria-label="Actions" aria-haspopup="true" aria-expanded="${openMenu === s.blockId}">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>
@@ -473,6 +507,63 @@ const notes = new Map();
 const api = (p, body) => fetch(p, { method: 'POST', headers: { 'X-Agent-Board': '1' }, body: JSON.stringify(body) });
 
 let openMenu = null;
+
+// ---------- Start an agent in a plain terminal ----------
+let launchers = null; // { claude: { label, modes: [{ id, label, hint, command }] }, ... }
+let openStarts = null; // blockId whose Start dropdown is open
+fetch('/api/launchers').then((r) => r.json()).then((l) => { launchers = l; render(); }).catch(() => {});
+
+const lastMode = (provider) => { try { return localStorage.getItem(`startMode:${provider}`); } catch { return null; } };
+const startModal = document.createElement('div');
+startModal.className = 'modal-bg';
+startModal.hidden = true;
+document.body.append(startModal);
+
+function closeStartModal() { startModal.hidden = true; startModal.innerHTML = ''; }
+function openStartModal(blockId, provider) {
+  const l = launchers?.[provider];
+  if (!l) return;
+  const s = data?.tabs.flatMap((t) => t.sessions).find((x) => x.blockId === blockId);
+  const checked = l.modes.some((m) => m.id === lastMode(provider)) ? lastMode(provider) : l.modes[0].id;
+  startModal.innerHTML = `
+    <form class="modal" role="dialog" aria-modal="true" aria-labelledby="startTitle">
+      <h2 id="startTitle">Start ${esc(l.label)}</h2>
+      <div class="sub">${esc(s ? `${s.project || 'terminal'} · ${s.tabName}` : '')}</div>
+      ${l.modes.map((m) => `<label class="mode">
+        <input type="radio" name="mode" value="${esc(m.id)}"${m.id === checked ? ' checked' : ''}>
+        <b>${esc(m.label)}</b>${m.hint ? `<span>${esc(m.hint)}</span>` : ''}<code>${esc(m.command)}</code>
+      </label>`).join('')}
+      <div class="buttons"><span class="err"></span>
+        <button type="button" data-cancel>Cancel</button>
+        <button type="submit" class="primary">Start</button>
+      </div>
+    </form>`;
+  startModal.hidden = false;
+  const form = startModal.querySelector('form');
+  form.querySelector('input:checked')?.focus();
+  form.querySelector('[data-cancel]').onclick = closeStartModal;
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const mode = form.mode.value;
+    const btn = form.querySelector('.primary');
+    btn.disabled = true;
+    try {
+      const r = await api('/api/start', { blockId, provider, mode });
+      if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+      try { localStorage.setItem(`startMode:${provider}`, mode); } catch {}
+      closeStartModal();
+      showFlash(blockId, 'Started ✓');
+    } catch (err) {
+      btn.disabled = false;
+      form.querySelector('.err').textContent = err.message;
+    }
+    refresh();
+  };
+}
+startModal.addEventListener('click', (e) => { if (e.target === startModal) closeStartModal(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !startModal.hidden) closeStartModal(); });
+// double click on a mode starts it right away
+startModal.addEventListener('dblclick', (e) => { if (e.target.closest('.mode')) startModal.querySelector('form').requestSubmit(); });
 // Going to the terminal or sending it a message marks a finished card seen (the server records it);
 // hide the dot right away instead of waiting for the next poll
 const seenLocally = new Set();
@@ -543,8 +634,9 @@ function openMessage(id) {
   document.querySelector(`[data-compose="${CSS.escape(id)}"]`)?.text.focus();
 }
 function closeMenu() {
-  if (openMenu === null) return;
+  if (openMenu === null && openStarts === null) return;
   openMenu = null;
+  openStarts = null;
   armedEnd = null;
   render();
 }
@@ -558,9 +650,22 @@ $('list').addEventListener('click', (e) => {
     if (unattach) removeImage(compose.dataset.compose, unattach.dataset.unattach);
     return;
   }
+  const startsBtn = e.target.closest('[data-starts]');
+  if (startsBtn) {
+    openStarts = openStarts === startsBtn.dataset.starts ? null : startsBtn.dataset.starts;
+    openMenu = null;
+    return render();
+  }
+  const startItem = e.target.closest('[data-start]');
+  if (startItem) {
+    openStarts = null;
+    render();
+    return openStartModal(startItem.dataset.id, startItem.dataset.start);
+  }
   const menuBtn = e.target.closest('[data-menu]');
   if (menuBtn) {
     openMenu = openMenu === menuBtn.dataset.menu ? null : menuBtn.dataset.menu;
+    openStarts = null;
     armedEnd = null;
     return render();
   }
@@ -583,7 +688,7 @@ $('list').addEventListener('click', (e) => {
     };
     return actions[item.dataset.action](item.dataset.id);
   }
-  if (openMenu !== null) return closeMenu(); // first click outside just closes the menu
+  if (openMenu !== null || openStarts !== null) return closeMenu(); // first click outside just closes the menu
   const card = e.target.closest('.card');
   if (!card) return;
   // from a phone, tapping a card opens its menu: there's no terminal here to go to
